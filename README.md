@@ -29,6 +29,18 @@ rule table (`src/RuleTable.c`), then Stage 2 compiles the final binary into `bin
 bin/driftnars shell
 ```
 
+The shell provides a `driftnars>` prompt with line editing (arrow keys, Home/End,
+backspace), command history (up/down arrows, 32-entry ring buffer), Ctrl-C to clear
+the current line, and Ctrl-D on an empty line to exit. When stdin is a pipe or file
+the prompt and line editing are disabled automatically, so scripted usage works as
+expected:
+
+```bash
+echo '<bird --> animal>.' | bin/driftnars shell
+```
+
+Type `help` at the prompt for a summary of all Narsese input formats and `*` commands.
+
 ### C library
 
 ```c

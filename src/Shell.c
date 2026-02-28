@@ -23,6 +23,7 @@
  */
 
 #include "Shell.h"
+#include "Linedit.h"
 
 static Feedback Shell_op_nop(Term args)
 {
@@ -35,18 +36,6 @@ void Shell_NARInit(NAR_t *nar)
     fflush(stdout);
     NAR_INIT(nar);
     nar->PRINT_DERIVATIONS = true;
-    int k=0; if(k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^left", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^right", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^up", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^down", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^say", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^pick", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^drop", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^go", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^activate", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    NAR_AddOperation(nar, "^deactivate", Shell_op_nop); if(++k >= OPERATIONS_MAX) { return; };
-    assert(false, "Shell_NARInit: Ran out of operators, add more there, or decrease OPERATIONS_MAX!");
 }
 
 int Shell_ProcessInput(NAR_t *nar, char *line)
@@ -68,6 +57,35 @@ int Shell_ProcessInput(NAR_t *nar, char *line)
     else
     {
         //accept comments, commands, timestep, and narsese
+        if(!strcmp(line,"help") || !strcmp(line,":help") || !strcmp(line,"*help"))
+        {
+            puts("DriftNARS shell — enter Narsese or commands.\n");
+            puts("Narsese input:");
+            puts("  <S --> P>.          Inheritance belief (eternal)");
+            puts("  <S --> P>. :|:      Belief at current time");
+            puts("  <S --> P>?          Question");
+            puts("  <S --> P>? :|:      Question about now");
+            puts("  <S --> P>! :|:      Goal (must have tense)");
+            puts("  N                   Run N inference cycles");
+            puts("  (empty line)        Run 1 inference cycle\n");
+            puts("Commands:");
+            puts("  *reset              Reset the reasoner");
+            puts("  *stats              Print runtime statistics");
+            puts("  *concepts           Dump all concepts");
+            puts("  *opconfig           Show operation configuration");
+            puts("  *volume=N           Set output volume (0-100)");
+            puts("  *decisionthreshold=F  Set decision threshold");
+            puts("  *motorbabbling=F    Set motor babbling chance (0.0-1.0)");
+            puts("  *babblingops=N      Set number of babbling operations");
+            puts("  *setopname ID NAME  Register operation name");
+            puts("  *setoparg ID N TERM Set operation babbling argument");
+            puts("  *concurrent         Mark next input as same timestep");
+            puts("  *query T NARSESE    Query with truth expectation threshold");
+            puts("  help                Show this help");
+            puts("  quit                Exit the shell");
+            return SHELL_CONTINUE;
+        }
+        else
         if(line[0] == '/' && line[1] == '/')
         {
             fputs("Comment: ", stdout);
@@ -446,8 +464,8 @@ void Shell_Start(NAR_t *nar)
     Shell_NARInit(nar);
     for(;;)
     {
-        char line[1024] = {0};
-        if(fgets(line, 1024, stdin) == NULL)
+        char *line = Linedit_Read("driftnars> ");
+        if(line == NULL)
         {
             if(EXIT_STATS)
             {
@@ -466,4 +484,5 @@ void Shell_Start(NAR_t *nar)
             break;
         }
     }
+    Linedit_Cleanup();
 }

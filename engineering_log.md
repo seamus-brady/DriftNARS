@@ -329,3 +329,63 @@ The refactor affects only:
 - **Edge-case robustness** (temporal ordering, sequence length, truth bound clamping)
 
 For valid inputs the system is mathematically equivalent to the original.
+
+---
+
+## Phase 6 — Interactive Shell with Line Editing
+
+**Problem:** The shell was a bare `fgets()` loop with no prompt, no line editing, no command
+history, no help text, and 10 hardcoded no-op operations (`^left`, `^right`, `^up`, `^down`,
+`^say`, `^pick`, `^drop`, `^go`, `^activate`, `^deactivate`) that consumed all `OPERATIONS_MAX`
+slots.
+
+### 6a. New module: `Linedit` (`src/Linedit.h`, `src/Linedit.c`)
+
+Self-contained raw termios line editor, ~190 lines, zero external dependencies beyond
+`<termios.h>`, `<unistd.h>`, `<string.h>`, `<stdio.h>`, `<stdbool.h>`.
+
+**API:**
+```c
+char *Linedit_Read(const char *prompt);  // returns line from static buffer, NULL on EOF
+void  Linedit_Cleanup(void);             // restores terminal state
+```
+
+**Design decisions:**
+
+- **isatty gate** — if stdin is not a TTY (pipe, file, redirect), falls back to plain `fgets()`
+  with no prompt. All existing scripted/piped usage is preserved unchanged.
+- **Raw mode is per-line** — enters raw mode before reading, restores cooked mode before
+  returning. Engine output (derivations, decisions, answers) happens between prompts in normal
+  cooked mode, so there are no interleaving or display issues.
+- **32-entry ring buffer history** — up/down arrow navigation, consecutive duplicate
+  suppression. Current input is saved/restored when browsing history.
+- **Editing:** left/right arrow cursor movement, backspace (127 and 8), Home/End (Ctrl-A/E
+  and `\e[H`/`\e[F` escape sequences), Ctrl-C clears line, Ctrl-D on empty line returns EOF.
+- **Line refresh** uses `\r\033[K` (carriage return + clear to end of line) — works on any
+  ANSI terminal without needing to track previous line length.
+
+### 6b. Shell cleanup (`src/Shell.c`)
+
+**`Shell_NARInit`** — removed all 10 hardcoded no-op operation registrations. The function
+now does only `NAR_INIT(nar)` + `nar->PRINT_DERIVATIONS = true`. This frees all
+`OPERATIONS_MAX` slots for actual user/application operations. The `Shell_op_nop` function
+is retained — it is used by the `*setopname` command to give a default action to operations
+registered via the shell protocol.
+
+**`Shell_Start`** — replaced `fgets()` loop with `Linedit_Read("driftnars> ")`. Added
+`Linedit_Cleanup()` on exit to ensure terminal state is restored.
+
+**`Shell_ProcessInput`** — added `help` command (also accepts `:help` and `*help`). Prints
+a categorised summary of Narsese input formats and all `*` commands. Inserted early in the
+if/else chain so it is checked before the Narsese parser.
+
+### 6c. No changes needed elsewhere
+
+- `src/Shell.h` — public API (`Shell_Start`, `Shell_NARInit`, `Shell_ProcessInput`) unchanged.
+- `Makefile` — `$(wildcard src/*.c)` automatically picks up `Linedit.c`.
+- System tests — `Bandrobot_Test.h` and others call `Shell_ProcessInput` directly (never
+  `Shell_NARInit`), so removing the no-op operations has zero impact on test behaviour.
+
+**Verification:** `make clean && make` — zero warnings. `make test` — all tests pass.
+Interactive testing confirmed: prompt display, arrow key editing, history navigation,
+Ctrl-C/Ctrl-D behaviour, `help` output, and piped input fallback.
