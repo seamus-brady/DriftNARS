@@ -26,6 +26,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
+#include "../Shell.h"
 
 void DRAW_LINE(double x, double y, double angle, int len, char *canvas, char symbol)
 {
@@ -64,7 +67,6 @@ void DRAW_LINE(double x, double y, double angle, int len, char *canvas, char sym
 #include "Testchamber_Test.h"
 #include "Sequence_Test.h"
 #include "Alien_Test.h"
-#include "UDPNAR_Test.h"
 #include "Bandrobot_Test.h"
 
 void Run_System_Tests(NAR_t *nar)
@@ -75,5 +77,4 @@ void Run_System_Tests(NAR_t *nar)
     NAR_Multistep_Test(nar);
     NAR_Multistep2_Test(nar);
     NAR_Sequence_Test(nar);
-    NAR_UDPNAR_Test(nar);
 }

@@ -1,4 +1,4 @@
-# CLAUDE.md — OpenNARS for Applications (ONA)
+# CLAUDE.md — DriftNARS
 
 Quick-reference for AI assistants working on this codebase.
 
@@ -6,31 +6,30 @@ Quick-reference for AI assistants working on this codebase.
 
 ## What this is
 
-ONA is a C99 Non-Axiomatic Reasoning System (NARS). It implements Non-Axiomatic Logic (NAL)
-levels 1–8, providing temporal/procedural reasoning, uncertainty handling, and adaptive
-decision making. Used in production by NASA JPL and Cisco.
+DriftNARS is a C99 Non-Axiomatic Reasoning System (NARS). It implements Non-Axiomatic
+Logic (NAL) levels 1–8, providing temporal/procedural reasoning, uncertainty handling,
+and adaptive decision making.
 
-The codebase has been refactored from a research binary into an embeddable library. See
-`engineering_log.md` for the full change history.
+Forked from [OpenNARS for Applications (ONA)](https://github.com/opennars/OpenNARS-for-Applications)
+at commit [`dc4efd0`](https://github.com/opennars/OpenNARS-for-Applications/commit/dc4efd0abd520cdb79bf53bfa3c285ebb24f2e8a),
+then stripped to a minimal embeddable library core. See `engineering_log.md` for
+the full change history.
 
 ---
 
 ## Build
 
 ```bash
-./build.sh                  # standard build → ./NAR binary
-./build.sh -fopenmp         # with OpenMP threading
-./libbuild.sh               # builds libONA.a + libONA.so + installs headers
-./NAR test                  # run all 27 unit + system tests
-./NAR shell                 # interactive Narsese REPL
+make                        # builds bin/driftnars + bin/libdriftnars.a
+make OPENMP=1               # with OpenMP threading
+make test                   # run all unit + system tests
+make clean                  # remove build artifacts
+bin/driftnars shell         # interactive Narsese REPL
 ```
 
 Two-stage build: Stage 1 compiles a bootstrap binary, runs it to generate `src/RuleTable.c`,
 then Stage 2 compiles the final binary with `STAGE=2` defined. `src/RuleTable.c` is a
 generated file — do not edit it manually.
-
-The `-msse2` warning on Apple Silicon is expected and harmless; the build script falls back
-to non-SSE compilation automatically.
 
 ---
 
@@ -140,10 +139,9 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `src/Stats.h/.c` | Runtime statistics |
 | `src/Globals.h/.c` | Error codes, assert macro, hash, RNG |
 | `src/Config.h` | All compile-time parameters (226+ constants) |
-| `src/main.c` | Entry point and demo mode dispatch |
-| `src/NetworkNAR/UDPNAR.c/.h` | UDP-based multi-agent networking |
-| `src/unit_tests/` | 12 unit tests |
-| `src/system_tests/` | 15 integration tests |
+| `src/main.c` | Entry point: test runner, shell, rule-table generation |
+| `src/unit_tests/` | 10 unit tests |
+| `src/system_tests/` | 13 system tests |
 
 **Pure value functions (no `nar` param):** `Truth_*`, `Stamp_*`, `Term_*`,
 `PriorityQueue_*`, `HashTable_*`, `Stack_*`, `Usage_*`.

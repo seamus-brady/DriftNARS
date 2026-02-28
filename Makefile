@@ -1,11 +1,11 @@
-# OpenNARS for Applications — Makefile
+# DriftNARS — Makefile
 #
 # Targets:
-#   all         Build NAR binary and libnar.a static library (default)
-#   NAR         CLI binary only
-#   libnar.a    Static library (excludes main.c, links against your own program)
-#   test        Run built-in unit and system tests
-#   clean       Remove all build artifacts including generated RuleTable.c
+#   all              Build driftnars binary and libdriftnars.a (default)
+#   driftnars        CLI binary only  (bin/driftnars)
+#   libdriftnars.a   Static library   (bin/libdriftnars.a)
+#   test             Run built-in unit and system tests
+#   clean            Remove all build artifacts including generated RuleTable.c
 #
 # Options (pass on command line):
 #   OPENMP=1    Enable OpenMP threading  (make OPENMP=1)
@@ -46,33 +46,33 @@ SSE_FLAGS := -mfpmath=sse -msse2
 endif
 
 BUILDDIR := build
+BINDIR   := bin
 
 # ── Sources ───────────────────────────────────────────────────────────────────
 # Exclude generated RuleTable.c from the static wildcard expansion
 SRCS_CORE := $(filter-out src/RuleTable.c, $(wildcard src/*.c))
-SRCS_NET  := $(wildcard src/NetworkNAR/*.c)
 
 # ── Stage-2 object files ──────────────────────────────────────────────────────
 OBJS_CORE := $(patsubst src/%.c,            $(BUILDDIR)/%.o,            $(SRCS_CORE))
-OBJS_NET  := $(patsubst src/NetworkNAR/%.c, $(BUILDDIR)/NetworkNAR/%.o, $(SRCS_NET))
 OBJS_GEN  := $(BUILDDIR)/RuleTable.o
-OBJS_ALL  := $(OBJS_CORE) $(OBJS_GEN) $(OBJS_NET)
+OBJS_ALL  := $(OBJS_CORE) $(OBJS_GEN)
 OBJS_LIB  := $(filter-out $(BUILDDIR)/main.o, $(OBJS_ALL))
 
 # Dependency files for automatic header change tracking
-DEPFILES  := $(OBJS_CORE:.o=.d) $(OBJS_NET:.o=.d)
+DEPFILES  := $(OBJS_CORE:.o=.d)
 
 # ── Targets ───────────────────────────────────────────────────────────────────
 .PHONY: all clean test
-all: NAR libnar.a
+all: $(BINDIR)/driftnars $(BINDIR)/libdriftnars.a
 
 # ── Stage 1: bootstrap binary — only purpose is generating RuleTable.c ────────
-NAR_bootstrap: $(SRCS_CORE) $(SRCS_NET)
+$(BUILDDIR)/bootstrap: $(SRCS_CORE)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(WFLAGS) -DSTAGE=1 $^ $(LDFLAGS) -o $@
 
 # ── Generated rule table ───────────────────────────────────────────────────────
-src/RuleTable.c: NAR_bootstrap
-	./NAR_bootstrap NAL_GenerateRuleTable > $@
+src/RuleTable.c: $(BUILDDIR)/bootstrap
+	$(BUILDDIR)/bootstrap NAL_GenerateRuleTable > $@
 
 # ── Stage-2 object compilation ─────────────────────────────────────────────────
 # Generated file gets no WFLAGS — the output is machine-written
@@ -84,25 +84,23 @@ $(BUILDDIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(WFLAGS) $(SSE_FLAGS) -DSTAGE=2 -MMD -MP -c $< -o $@
 
-$(BUILDDIR)/NetworkNAR/%.o: src/NetworkNAR/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(WFLAGS) $(SSE_FLAGS) -DSTAGE=2 -MMD -MP -c $< -o $@
-
 # ── Final binary ───────────────────────────────────────────────────────────────
-NAR: $(OBJS_ALL)
+$(BINDIR)/driftnars: $(OBJS_ALL)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SSE_FLAGS) $^ $(LDFLAGS) -o $@
 
 # ── Static library ─────────────────────────────────────────────────────────────
-libnar.a: $(OBJS_LIB)
+$(BINDIR)/libdriftnars.a: $(OBJS_LIB)
+	@mkdir -p $(dir $@)
 	$(AR) $(ARFLAGS) $@ $^
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
-test: NAR
-	./NAR test
+test: $(BINDIR)/driftnars
+	$(BINDIR)/driftnars test
 
 # ── Clean ──────────────────────────────────────────────────────────────────────
 clean:
-	rm -rf $(BUILDDIR) NAR NAR_bootstrap libnar.a src/RuleTable.c
+	rm -rf $(BUILDDIR) $(BINDIR) src/RuleTable.c
 
 # Pull in generated header dependencies (silently absent on first build)
 -include $(DEPFILES)

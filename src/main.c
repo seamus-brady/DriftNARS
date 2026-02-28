@@ -22,35 +22,17 @@
  * THE SOFTWARE.
  */
 
-#include <time.h>
-#include <unistd.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "NAR.h"
 #include "./unit_tests/unit_tests.h"
 #include "./system_tests/system_tests.h"
 #include "Shell.h"
-#include "./NetworkNAR/UDPNAR.h"
 
 void Process_Args(NAR_t *nar, int argc, char *argv[])
 {
-    bool inspectionOnExit = false;
-    long iterations = -1;
-    if(argc >= 4)
-    {
-        if(!strcmp(argv[3],"InspectionOnExit"))
-        {
-            inspectionOnExit = true;
-        }
-    }
-    if(argc >= 3)
-    {
-        if(!strcmp(argv[2],"InspectionOnExit"))
-        {
-            inspectionOnExit = true;
-        }
-    }
     if(argc >= 2)
     {
         NAR_INIT(nar);
@@ -70,88 +52,14 @@ void Process_Args(NAR_t *nar, int argc, char *argv[])
         {
             Shell_Start(nar);
         }
-        for(int i=1; i<argc; i++)
-        {
-            iterations = i+1 < argc ? atol(argv[i+1]) : -1;
-            if(!strcmp(argv[i],"pong"))
-            {
-                NAR_Pong(nar, iterations);
-            }
-            else
-            if(!strcmp(argv[i],"pong2"))
-            {
-                NAR_Pong2(nar, iterations);
-            }
-            else
-            if(!strcmp(argv[i],"testchamber"))
-            {
-                NAR_TestChamber(nar);
-            }
-            else
-            if(!strcmp(argv[i],"alien"))
-            {
-                NAR_Alien(nar, iterations);
-            }
-            else
-            if(!strcmp(argv[i],"cartpole"))
-            {
-                NAR_Cartpole(nar, iterations);
-            }
-            else
-            if(!strcmp(argv[i],"robot"))
-            {
-                NAR_Robot(nar, iterations);
-            }
-            else
-            if(!strcmp(argv[i],"bandrobot"))
-            {
-                NAR_Bandrobot(nar, iterations);
-            }
-        }
-        if(!strcmp(argv[1],"UDPNAR")) // ./NAR UDPNAR IP PORT timestep(ns per cycle) printDerivations
-        {
-            char *ip = argv[2];
-            int port = atoi(argv[3]);
-            long timestep = atol(argv[4]);
-            bool printDerivations = !strcmp("true", argv[5]);
-            nar->PRINT_DERIVATIONS = printDerivations;
-            UDPNAR_Start(nar, ip, port, timestep);
-            puts("//press any key and enter to quit!");
-            fflush(stdout);
-            getchar();
-            UDPNAR_Stop();
-        }
-    }
-    if(inspectionOnExit)
-    {
-        Shell_ProcessInput(nar, "*opconfig");
-        Shell_ProcessInput(nar, "*concepts");
-        Shell_ProcessInput(nar, "*cycling_belief_events");
-        Shell_ProcessInput(nar, "*cycling_goal_events");
-        Shell_ProcessInput(nar, "*stats");
     }
 }
 
 void Display_Help(void)
 {
-    puts("");
-    puts("Welcome to `OpenNARS for Applications`!");
-    puts("```````````````````````````````````````");
-    puts(" __        ");
-    puts("/ \\`-+-.__ ");
-    puts("```  |  /o\\");
-    puts("     |  ```");
-    puts("  __/ \\__  ");
-    puts("  ```````  ");
-    puts("If you wish to run examples now, just pass the corresponding parameter:");
-    puts("NAR pong (starts Pong example)");
-    puts("NAR pong2 (starts Pong2 example)");
-    puts("NAR testchamber (starts Test Chamber multistep procedure learning example)");
-    puts("NAR alien (starts the alien example)");
-    puts("NAR cartpole (starts the cartpole example)");
-    //puts("NAR bandrobot (starts the band robot example)");
-    puts("NAR robot (starts the grid robot example)");
-    puts("NAR shell (starts the interactive NAL shell)");
+    puts("Usage:");
+    puts("  driftnars test   — run unit and system tests");
+    puts("  driftnars shell  — interactive Narsese REPL");
 }
 
 int main(int argc, char *argv[])

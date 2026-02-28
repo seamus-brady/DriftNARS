@@ -1,11 +1,7 @@
-NAR.exe
-NAR
-NAR.a
-NAR.so
-NAR.dll
+bin/
+build/
 src/RuleTable.c
 .envrc
-NAR.dSYM/
 *~
 
 # For Clangd
