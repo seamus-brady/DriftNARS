@@ -25,6 +25,7 @@ make OPENMP=1               # with OpenMP threading
 make test                   # run all unit + system tests
 make clean                  # remove build artifacts
 bin/driftnars shell         # interactive Narsese REPL
+bin/driftnars driftscript   # interactive DriftScript REPL
 ```
 
 Two-stage build: Stage 1 compiles a bootstrap binary, runs it to generate `src/engine/RuleTable.c`,
@@ -169,6 +170,7 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `src/engine/unit_tests/` | 10 unit tests |
 | `src/engine/system_tests/` | 13 system tests |
 | `src/compiler/driftscript.c` | DriftScript-to-Narsese compiler |
+| `src/compiler/driftscript.h` | Public API for DriftScript compiler (library mode) |
 | `examples/python/driftnars.py` | Python ctypes wrapper class |
 | `examples/python/example.py` | Python usage example |
 | `docs/narsese_primer.md` | Comprehensive Narsese language reference |

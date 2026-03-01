@@ -47,6 +47,8 @@
 //-------//
 //Initializes the shell NAR and runs it with stdin/stdout
 void Shell_Start(NAR_t *nar);
+//Interactive DriftScript REPL — compiles DriftScript on the fly
+void Shell_StartDriftScript(NAR_t *nar);
 //Only initializes the shell NAR with the default ops, but can be used differently
 void Shell_NARInit(NAR_t *nar);
 //Process a shell input line, can be comments, timesteps, Narsese, and commands, returns if system reset was issued

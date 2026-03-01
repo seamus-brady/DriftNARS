@@ -31,10 +31,25 @@
 #include "./system_tests/system_tests.h"
 #include "Shell.h"
 
+void Display_Help(void)
+{
+    puts("DriftNARS — Non-Axiomatic Reasoning System\n");
+    puts("Usage:");
+    puts("  driftnars shell       — interactive Narsese REPL");
+    puts("  driftnars driftscript — interactive DriftScript REPL");
+    puts("  driftnars test        — run unit and system tests");
+    puts("  driftnars --help      — show this help");
+}
+
 void Process_Args(NAR_t *nar, int argc, char *argv[])
 {
     if(argc >= 2)
     {
+        if(!strcmp(argv[1],"--help") || !strcmp(argv[1],"-h") || !strcmp(argv[1],"help"))
+        {
+            Display_Help();
+            exit(0);
+        }
         NAR_INIT(nar);
         if(!strcmp(argv[1],"NAL_GenerateRuleTable"))
         {
@@ -52,14 +67,13 @@ void Process_Args(NAR_t *nar, int argc, char *argv[])
         {
             Shell_Start(nar);
         }
+#if STAGE >= 2
+        if(!strcmp(argv[1],"driftscript"))
+        {
+            Shell_StartDriftScript(nar);
+        }
+#endif
     }
-}
-
-void Display_Help(void)
-{
-    puts("Usage:");
-    puts("  driftnars test   — run unit and system tests");
-    puts("  driftnars shell  — interactive Narsese REPL");
 }
 
 int main(int argc, char *argv[])

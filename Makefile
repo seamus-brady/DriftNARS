@@ -65,7 +65,8 @@ SRCS_CORE := $(filter-out src/engine/RuleTable.c, $(wildcard src/engine/*.c))
 # ── Stage-2 object files ──────────────────────────────────────────────────────
 OBJS_CORE := $(patsubst src/engine/%.c,     $(BUILDDIR)/%.o,            $(SRCS_CORE))
 OBJS_GEN  := $(BUILDDIR)/RuleTable.o
-OBJS_ALL  := $(OBJS_CORE) $(OBJS_GEN)
+OBJS_DS   := $(BUILDDIR)/driftscript.o
+OBJS_ALL  := $(OBJS_CORE) $(OBJS_GEN) $(OBJS_DS)
 OBJS_LIB  := $(filter-out $(BUILDDIR)/main.o, $(OBJS_ALL))
 
 # Dependency files for automatic header change tracking
@@ -90,9 +91,15 @@ $(BUILDDIR)/RuleTable.o: src/engine/RuleTable.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SSE_FLAGS) -DSTAGE=2 -c $< -o $@
 
+# DriftScript compiler object (library mode — no main())
+# Uses its own CFLAGS without _POSIX_C_SOURCE (which suppresses snprintf on some platforms)
+$(BUILDDIR)/driftscript.o: src/compiler/driftscript.c src/compiler/driftscript.h
+	@mkdir -p $(dir $@)
+	$(CC) -std=c99 -pedantic -O3 -g3 -flto -fPIC $(WFLAGS) $(SSE_FLAGS) -DDS_LIBRARY -DSTAGE=2 -MMD -MP -c $< -o $@
+
 $(BUILDDIR)/%.o: src/engine/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(WFLAGS) $(SSE_FLAGS) -DSTAGE=2 -MMD -MP -c $< -o $@
+	$(CC) $(CFLAGS) $(WFLAGS) $(SSE_FLAGS) -Isrc/compiler -DSTAGE=2 -MMD -MP -c $< -o $@
 
 # ── Final binary ───────────────────────────────────────────────────────────────
 $(BINDIR)/driftnars: $(OBJS_ALL)

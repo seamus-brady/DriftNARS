@@ -18,6 +18,10 @@
 #include <ctype.h>
 #include <stdbool.h>
 
+#ifdef DS_LIBRARY
+#include "driftscript.h"
+#endif
+
 /* ── Limits ─────────────────────────────────────────────────────────────────── */
 
 #define DS_TOKEN_MAX      1024
@@ -46,6 +50,11 @@ static void ds_clear_error(void)
 {
     ds_error_buf[0] = '\0';
     ds_has_error = false;
+}
+
+const char *DS_GetError(void)
+{
+    return ds_error_buf;
 }
 
 /* ── Token types ────────────────────────────────────────────────────────────── */
@@ -331,18 +340,20 @@ static int parse_all(const Token *tokens, int ntok)
 
 /* ── Compiler ───────────────────────────────────────────────────────────────── */
 
-/* Compile result kinds */
+/* Compile result kinds — defined in driftscript.h when building as library */
+#ifndef DS_LIBRARY
 typedef enum {
-    RES_NARSESE,
-    RES_SHELL_COMMAND,
-    RES_CYCLES,
-    RES_DEF_OP
-} ResultKind;
+    DS_RES_NARSESE,
+    DS_RES_SHELL_COMMAND,
+    DS_RES_CYCLES,
+    DS_RES_DEF_OP
+} DS_ResultKind;
 
 typedef struct {
-    ResultKind kind;
+    DS_ResultKind kind;
     char value[DS_OUTPUT_MAX];
-} CompileResult;
+} DS_CompileResult;
+#endif
 
 /* Copula lookup */
 typedef struct { const char *name; const char *cop; } CopulaEntry;
@@ -872,7 +883,7 @@ static bool compile_term(CompilerState *cs, int node_idx, char *out, int outsize
 
 /* ── Top-level compilation ──────────────────────────────────────────────────── */
 
-static bool compile_sentence(CompilerState *cs, int node_idx, CompileResult *result)
+static bool compile_sentence(CompilerState *cs, int node_idx, DS_CompileResult *result)
 {
     Node *n = &node_pool[node_idx];
     const char *head = node_pool[n->children[0]].value;
@@ -1008,12 +1019,12 @@ static bool compile_sentence(CompilerState *cs, int node_idx, CompileResult *res
         snprintf(dt_str, sizeof(dt_str), "dt=%s ", dt_val);
     }
 
-    result->kind = RES_NARSESE;
+    result->kind = DS_RES_NARSESE;
     snprintf(result->value, DS_OUTPUT_MAX, "%s%s%c%s%s", dt_str, term_str, punct, tense_str, truth_str);
     return true;
 }
 
-static bool compile_cycles(int node_idx, CompileResult *result)
+static bool compile_cycles(int node_idx, DS_CompileResult *result)
 {
     Node *n = &node_pool[node_idx];
     if (n->nchildren != 2) {
@@ -1031,13 +1042,13 @@ static bool compile_cycles(int node_idx, CompileResult *result)
         ds_error(msg, count_node->line, count_node->col);
         return false;
     }
-    result->kind = RES_CYCLES;
+    result->kind = DS_RES_CYCLES;
     strncpy(result->value, count_node->value, DS_OUTPUT_MAX - 1);
     result->value[DS_OUTPUT_MAX - 1] = '\0';
     return true;
 }
 
-static bool compile_def_op(int node_idx, CompileResult *result)
+static bool compile_def_op(int node_idx, DS_CompileResult *result)
 {
     Node *n = &node_pool[node_idx];
     if (n->nchildren != 2) {
@@ -1055,13 +1066,13 @@ static bool compile_def_op(int node_idx, CompileResult *result)
         ds_error(msg, name_node->line, name_node->col);
         return false;
     }
-    result->kind = RES_DEF_OP;
+    result->kind = DS_RES_DEF_OP;
     strncpy(result->value, name_node->value, DS_OUTPUT_MAX - 1);
     result->value[DS_OUTPUT_MAX - 1] = '\0';
     return true;
 }
 
-static bool compile_config(int node_idx, CompileResult *result)
+static bool compile_config(int node_idx, DS_CompileResult *result)
 {
     Node *n = &node_pool[node_idx];
     if (n->nchildren != 3) {
@@ -1084,12 +1095,12 @@ static bool compile_config(int node_idx, CompileResult *result)
         ds_error(msg, key_node->line, key_node->col);
         return false;
     }
-    result->kind = RES_SHELL_COMMAND;
+    result->kind = DS_RES_SHELL_COMMAND;
     snprintf(result->value, DS_OUTPUT_MAX, "*%s=%s", key_node->value, val_node->value);
     return true;
 }
 
-static bool compile_toplevel(int node_idx, CompileResult *result)
+static bool compile_toplevel(int node_idx, DS_CompileResult *result)
 {
     Node *n = &node_pool[node_idx];
 
@@ -1126,7 +1137,7 @@ static bool compile_toplevel(int node_idx, CompileResult *result)
     } else if (strcmp(head, "cycles") == 0) {
         return compile_cycles(node_idx, result);
     } else if (strcmp(head, "reset") == 0) {
-        result->kind = RES_SHELL_COMMAND;
+        result->kind = DS_RES_SHELL_COMMAND;
         strcpy(result->value, "*reset");
         return true;
     } else if (strcmp(head, "def-op") == 0) {
@@ -1134,7 +1145,7 @@ static bool compile_toplevel(int node_idx, CompileResult *result)
     } else if (strcmp(head, "config") == 0) {
         return compile_config(node_idx, result);
     } else if (strcmp(head, "concurrent") == 0) {
-        result->kind = RES_SHELL_COMMAND;
+        result->kind = DS_RES_SHELL_COMMAND;
         strcpy(result->value, "*concurrent");
         return true;
     }
@@ -1149,7 +1160,7 @@ static bool compile_toplevel(int node_idx, CompileResult *result)
 
 #define DS_RESULTS_MAX 256
 
-static int compile_source(const char *source, CompileResult *results, int max_results)
+int DS_CompileSource(const char *source, DS_CompileResult *results, int max_results)
 {
     ds_clear_error();
     node_pool_reset();
@@ -1172,17 +1183,19 @@ static int compile_source(const char *source, CompileResult *results, int max_re
     return nresults;
 }
 
+#ifndef DS_LIBRARY
+
 /* ── Emit to stdout ─────────────────────────────────────────────────────────── */
 
-static void emit_result(const CompileResult *r)
+static void emit_result(const DS_CompileResult *r)
 {
     switch (r->kind) {
-    case RES_NARSESE:
-    case RES_SHELL_COMMAND:
-    case RES_CYCLES:
+    case DS_RES_NARSESE:
+    case DS_RES_SHELL_COMMAND:
+    case DS_RES_CYCLES:
         puts(r->value);
         break;
-    case RES_DEF_OP:
+    case DS_RES_DEF_OP:
         printf("*register %s\n", r->value);
         break;
     }
@@ -1238,8 +1251,8 @@ static int run_compiler(void)
             }
 
             if (has_content) {
-                CompileResult results[DS_RESULTS_MAX];
-                int n = compile_source(input, results, DS_RESULTS_MAX);
+                DS_CompileResult results[DS_RESULTS_MAX];
+                int n = DS_CompileSource(input, results, DS_RESULTS_MAX);
                 if (n < 0) {
                     fprintf(stderr, "driftscript: %s\n", ds_error_buf);
                     return 1;
@@ -1264,8 +1277,8 @@ static int run_compiler(void)
             if (!isspace((unsigned char)input[i])) { has_content = true; break; }
         }
         if (has_content) {
-            CompileResult results[DS_RESULTS_MAX];
-            int n = compile_source(input, results, DS_RESULTS_MAX);
+            DS_CompileResult results[DS_RESULTS_MAX];
+            int n = DS_CompileSource(input, results, DS_RESULTS_MAX);
             if (n < 0) {
                 fprintf(stderr, "driftscript: %s\n", ds_error_buf);
                 return 1;
@@ -1286,8 +1299,8 @@ static int test_fail = 0;
 
 static void check_compile(const char *input, const char *expected, const char *test_name)
 {
-    CompileResult results[DS_RESULTS_MAX];
-    int n = compile_source(input, results, DS_RESULTS_MAX);
+    DS_CompileResult results[DS_RESULTS_MAX];
+    int n = DS_CompileSource(input, results, DS_RESULTS_MAX);
     if (n < 0) {
         fprintf(stderr, "  FAIL [%s]: compile error: %s\n", test_name, ds_error_buf);
         test_fail++;
@@ -1306,11 +1319,11 @@ static void check_compile(const char *input, const char *expected, const char *t
     test_pass++;
 }
 
-static void check_compile_kind(const char *input, ResultKind expected_kind,
+static void check_compile_kind(const char *input, DS_ResultKind expected_kind,
                                  const char *expected_value, const char *test_name)
 {
-    CompileResult results[DS_RESULTS_MAX];
-    int n = compile_source(input, results, DS_RESULTS_MAX);
+    DS_CompileResult results[DS_RESULTS_MAX];
+    int n = DS_CompileSource(input, results, DS_RESULTS_MAX);
     if (n < 0) {
         fprintf(stderr, "  FAIL [%s]: compile error: %s\n", test_name, ds_error_buf);
         test_fail++;
@@ -1338,8 +1351,8 @@ static void check_compile_kind(const char *input, ResultKind expected_kind,
 
 static void check_error(const char *input, const char *expected_substr, const char *test_name)
 {
-    CompileResult results[DS_RESULTS_MAX];
-    int n = compile_source(input, results, DS_RESULTS_MAX);
+    DS_CompileResult results[DS_RESULTS_MAX];
+    int n = DS_CompileSource(input, results, DS_RESULTS_MAX);
     if (n >= 0) {
         fprintf(stderr, "  FAIL [%s]: expected error but compiled successfully\n", test_name);
         test_fail++;
@@ -1357,8 +1370,8 @@ static void check_error(const char *input, const char *expected_substr, const ch
 static void check_multi(const char *input, int expected_count, const char **expected_values,
                            const char *test_name)
 {
-    CompileResult results[DS_RESULTS_MAX];
-    int n = compile_source(input, results, DS_RESULTS_MAX);
+    DS_CompileResult results[DS_RESULTS_MAX];
+    int n = DS_CompileSource(input, results, DS_RESULTS_MAX);
     if (n < 0) {
         fprintf(stderr, "  FAIL [%s]: compile error: %s\n", test_name, ds_error_buf);
         test_fail++;
@@ -1382,8 +1395,8 @@ static void check_multi(const char *input, int expected_count, const char **expe
 
 static void check_contains(const char *input, const char *expected_substr, const char *test_name)
 {
-    CompileResult results[DS_RESULTS_MAX];
-    int n = compile_source(input, results, DS_RESULTS_MAX);
+    DS_CompileResult results[DS_RESULTS_MAX];
+    int n = DS_CompileSource(input, results, DS_RESULTS_MAX);
     if (n < 0) {
         fprintf(stderr, "  FAIL [%s]: compile error: %s\n", test_name, ds_error_buf);
         test_fail++;
@@ -1743,8 +1756,8 @@ static void test_variables(void)
 
     /* test_multiple_vars */
     {
-        CompileResult results[DS_RESULTS_MAX];
-        int n = compile_source("(believe (imply (inherit $a $b) (similar $b $a)))", results, DS_RESULTS_MAX);
+        DS_CompileResult results[DS_RESULTS_MAX];
+        int n = DS_CompileSource("(believe (imply (inherit $a $b) (similar $b $a)))", results, DS_RESULTS_MAX);
         if (n == 1 && strstr(results[0].value, "$1") && strstr(results[0].value, "$2")) {
             /* Count occurrences */
             int count1 = 0, count2 = 0;
@@ -1762,8 +1775,8 @@ static void test_variables(void)
 
     /* test_collision_avoidance */
     {
-        CompileResult results[DS_RESULTS_MAX];
-        int n = compile_source("(believe (imply (inherit $1 \"bird\") (inherit $x \"animal\")))",
+        DS_CompileResult results[DS_RESULTS_MAX];
+        int n = DS_CompileSource("(believe (imply (inherit $1 \"bird\") (inherit $x \"animal\")))",
                                results, DS_RESULTS_MAX);
         if (n == 1 && strstr(results[0].value, "$1") && strstr(results[0].value, "$2"))
             test_pass++;
@@ -1775,12 +1788,12 @@ static void test_variables(void)
 static void test_directives(void)
 {
     printf("  Directive tests...\n");
-    check_compile_kind("(cycles 10)", RES_CYCLES, "10", "dir_cycles");
-    check_compile_kind("(reset)", RES_SHELL_COMMAND, "*reset", "dir_reset");
-    check_compile_kind("(def-op ^press)", RES_DEF_OP, "^press", "dir_def_op");
-    check_compile_kind("(config volume 100)", RES_SHELL_COMMAND, "*volume=100", "dir_config");
+    check_compile_kind("(cycles 10)", DS_RES_CYCLES, "10", "dir_cycles");
+    check_compile_kind("(reset)", DS_RES_SHELL_COMMAND, "*reset", "dir_reset");
+    check_compile_kind("(def-op ^press)", DS_RES_DEF_OP, "^press", "dir_def_op");
+    check_compile_kind("(config volume 100)", DS_RES_SHELL_COMMAND, "*volume=100", "dir_config");
     check_error("(config badkey 1)", "Unknown config", "dir_config_invalid");
-    check_compile_kind("(concurrent)", RES_SHELL_COMMAND, "*concurrent", "dir_concurrent");
+    check_compile_kind("(concurrent)", DS_RES_SHELL_COMMAND, "*concurrent", "dir_concurrent");
     check_error("(cycles abc)", "number", "dir_cycles_non_number");
 }
 
@@ -1814,8 +1827,8 @@ static void test_multi(void)
 
     /* test_variable_scope_per_sentence */
     {
-        CompileResult results[DS_RESULTS_MAX];
-        int n = compile_source(
+        DS_CompileResult results[DS_RESULTS_MAX];
+        int n = DS_CompileSource(
             "(believe (imply (inherit $x \"bird\") (inherit $x \"animal\")))\n"
             "(believe (imply (inherit $y \"fish\") (inherit $y \"swimmer\")))",
             results, DS_RESULTS_MAX);
@@ -1924,3 +1937,5 @@ int main(int argc, char **argv)
 
     return run_compiler();
 }
+
+#endif /* DS_LIBRARY */

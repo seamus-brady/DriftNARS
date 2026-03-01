@@ -24,6 +24,9 @@
 
 #include "Shell.h"
 #include "Linedit.h"
+#if STAGE >= 2
+#include "driftscript.h"
+#endif
 
 static Feedback Shell_op_nop(Term args)
 {
@@ -494,3 +497,196 @@ void Shell_Start(NAR_t *nar)
     }
     Linedit_Cleanup();
 }
+
+#if STAGE >= 2
+
+/* ── DriftScript REPL ──────────────────────────────────────────────────────── */
+
+static void Shell_DS_TrackParens(const char *text, int *depth, bool *in_str, bool *esc)
+{
+    for(int i = 0; text[i]; i++)
+    {
+        char ch = text[i];
+        if(*esc) { *esc = false; continue; }
+        if(*in_str)
+        {
+            if(ch == '\\') *esc = true;
+            else if(ch == '"') *in_str = false;
+            continue;
+        }
+        if(ch == ';') break;
+        if(ch == '"') { *in_str = true; continue; }
+        if(ch == '(') (*depth)++;
+        else if(ch == ')') (*depth)--;
+    }
+}
+
+static int Shell_DS_Dispatch(NAR_t *nar, DS_CompileResult *results, int n)
+{
+    for(int i = 0; i < n; i++)
+    {
+        int cmd;
+        switch(results[i].kind)
+        {
+        case DS_RES_NARSESE:
+            if(NAR_AddInputNarsese(nar, results[i].value) != NAR_OK)
+            {
+                fputs("//Error: input parse failed\n", stderr);
+            }
+            break;
+        case DS_RES_CYCLES:
+        case DS_RES_SHELL_COMMAND:
+            cmd = Shell_ProcessInput(nar, results[i].value);
+            if(cmd == SHELL_RESET || cmd == SHELL_EXIT)
+                return cmd;
+            break;
+        case DS_RES_DEF_OP:
+            {
+                char reg_cmd[DS_OUTPUT_MAX + 16];
+                sprintf(reg_cmd, "*register %s", results[i].value);
+                cmd = Shell_ProcessInput(nar, reg_cmd);
+                if(cmd == SHELL_RESET || cmd == SHELL_EXIT)
+                    return cmd;
+            }
+            break;
+        }
+    }
+    return SHELL_CONTINUE;
+}
+
+void Shell_StartDriftScript(NAR_t *nar)
+{
+    Shell_NARInit(nar);
+
+    char accum[65536];
+    int accum_len = 0;
+    int paren_depth = 0;
+    bool in_string = false;
+    bool escape_next = false;
+
+    for(;;)
+    {
+        const char *prompt = paren_depth > 0 ? "...> " : "driftscript> ";
+        char *line = Linedit_Read(prompt);
+        if(line == NULL)
+        {
+            if(EXIT_STATS)
+            {
+                Stats_Print(nar, nar->currentTime);
+            }
+            break;
+        }
+
+        /* At top level (not accumulating), route special inputs directly */
+        if(paren_depth == 0 && accum_len == 0)
+        {
+            /* Trim trailing whitespace for comparisons */
+            char trimmed[4096];
+            strncpy(trimmed, line, sizeof(trimmed) - 1);
+            trimmed[sizeof(trimmed) - 1] = '\0';
+            int tlen = (int)strlen(trimmed);
+            while(tlen > 0 && isspace((unsigned char)trimmed[tlen-1]))
+                trimmed[--tlen] = '\0';
+
+            if(tlen == 0)
+            {
+                NAR_Cycles(nar, 1);
+                continue;
+            }
+            if(!strcmp(trimmed, "quit"))
+            {
+                break;
+            }
+            if(!strcmp(trimmed, "help") || !strcmp(trimmed, ":help") || !strcmp(trimmed, "*help"))
+            {
+                puts("DriftScript REPL — enter DriftScript or commands.\n");
+                puts("DriftScript input:");
+                puts("  (believe (inherit \"bird\" \"animal\"))    Eternal belief");
+                puts("  (believe \"light_on\" :now)               Present-tense belief");
+                puts("  (ask (inherit \"robin\" \"animal\"))       Question");
+                puts("  (goal \"light_off\")                      Goal");
+                puts("  (cycles 10)                              Run 10 inference cycles");
+                puts("  (def-op ^press)                          Register operation");
+                puts("  (config volume 0)                        Set config parameter");
+                puts("  (reset)                                  Reset the reasoner\n");
+                puts("Shell pass-through:");
+                puts("  *volume=0, *stats, etc.                  Shell commands");
+                puts("  N                                        Run N inference cycles");
+                puts("  (empty line)                             Run 1 inference cycle");
+                puts("  ; comment                                Ignored\n");
+                puts("Multi-line: unbalanced parens continue on next line (\"...>\" prompt).");
+                puts("  help                                     Show this help");
+                puts("  quit                                     Exit the REPL");
+                continue;
+            }
+            if(trimmed[0] == '*')
+            {
+                int cmd = Shell_ProcessInput(nar, trimmed);
+                if(cmd == SHELL_RESET) { Shell_NARInit(nar); continue; }
+                if(cmd == SHELL_EXIT) break;
+                continue;
+            }
+            if(trimmed[0] == ';')
+            {
+                continue;
+            }
+            if(strspn(trimmed, "0123456789") == (size_t)tlen && tlen > 0)
+            {
+                Shell_ProcessInput(nar, trimmed);
+                continue;
+            }
+        }
+
+        /* Accumulate line for DriftScript compilation */
+        int line_len = (int)strlen(line);
+        if(accum_len + line_len + 1 >= (int)sizeof(accum))
+        {
+            fputs("//Error: DriftScript input buffer overflow\n", stderr);
+            accum_len = 0;
+            accum[0] = '\0';
+            paren_depth = 0;
+            in_string = false;
+            escape_next = false;
+            continue;
+        }
+        if(accum_len > 0)
+            accum[accum_len++] = '\n';
+        memcpy(&accum[accum_len], line, line_len);
+        accum_len += line_len;
+        accum[accum_len] = '\0';
+
+        Shell_DS_TrackParens(line, &paren_depth, &in_string, &escape_next);
+
+        if(paren_depth <= 0)
+        {
+            /* Compile and dispatch */
+            DS_CompileResult results[DS_RESULTS_MAX];
+            int n = DS_CompileSource(accum, results, DS_RESULTS_MAX);
+            if(n < 0)
+            {
+                fprintf(stderr, "//Error: %s\n", DS_GetError());
+            }
+            else
+            {
+                int cmd = Shell_DS_Dispatch(nar, results, n);
+                if(cmd == SHELL_RESET)
+                {
+                    Shell_NARInit(nar);
+                }
+                else if(cmd == SHELL_EXIT)
+                {
+                    break;
+                }
+            }
+
+            accum_len = 0;
+            accum[0] = '\0';
+            paren_depth = 0;
+            in_string = false;
+            escape_next = false;
+        }
+    }
+    Linedit_Cleanup();
+}
+
+#endif /* STAGE >= 2 */

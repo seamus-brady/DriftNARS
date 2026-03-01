@@ -508,6 +508,43 @@ Marks the next input as occurring at the same time step as the previous one.
 
 ## Integration
 
+### Interactive REPL
+
+The `driftscript` subcommand launches an interactive REPL that compiles DriftScript
+on the fly and feeds results directly to the reasoner:
+
+```bash
+bin/driftnars driftscript
+```
+
+```
+driftscript> (believe (inherit "bird" "animal"))
+Input: <bird --> animal>. ...
+driftscript> (believe (inherit "robin" "bird"))
+Input: <robin --> bird>. ...
+driftscript> (ask (inherit "robin" "animal"))
+Answer: <robin --> animal>. ...
+```
+
+Multi-line input is supported — the prompt changes to `...>` while parentheses are
+unbalanced:
+
+```
+driftscript> (believe (predict
+...>   (seq "light_on" (call ^press))
+...>   "light_off"))
+Input: ...
+```
+
+Shell commands (`*volume=0`, `*stats`, etc.) and cycle shorthands (`5`, empty line)
+work at the top level. Comments starting with `;` are ignored. Type `quit` to exit.
+
+Piped input also works:
+
+```bash
+echo '(believe (inherit "bird" "animal"))' | bin/driftnars driftscript
+```
+
 ### Standalone compiler (CLI)
 
 ```bash
