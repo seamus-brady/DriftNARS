@@ -27,8 +27,8 @@ make clean                  # remove build artifacts
 bin/driftnars shell         # interactive Narsese REPL
 ```
 
-Two-stage build: Stage 1 compiles a bootstrap binary, runs it to generate `src/RuleTable.c`,
-then Stage 2 compiles the final binary with `STAGE=2` defined. `src/RuleTable.c` is a
+Two-stage build: Stage 1 compiles a bootstrap binary, runs it to generate `src/engine/RuleTable.c`,
+then Stage 2 compiles the final binary with `STAGE=2` defined. `src/engine/RuleTable.c` is a
 generated file — do not edit it manually.
 
 ---
@@ -147,27 +147,28 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 
 | File | Role |
 |------|------|
-| `src/NAR.h/.c` | Public API, `NAR_t` definition, lifecycle |
-| `src/Cycle.h/.c` | Main reasoning loop (`Cycle_Perform`) |
-| `src/Decision.h/.c` | Decision making, motor babbling, anticipation |
-| `src/Memory.h/.c` | Concept storage, priority queues, hash tables |
-| `src/NAL.h/.c` | All inference rules (generated into RuleTable.c at build time) |
-| `src/Narsese.h/.c` | Parser and term encoder |
-| `src/Inference.h/.c` | Temporal/procedural inference primitives |
-| `src/Truth.h/.c` | Truth-function arithmetic |
-| `src/Variable.h/.c` | Variable unification and substitution |
-| `src/InvertedAtomIndex.h/.c` | Fast concept lookup by atom |
-| `src/OccurrenceTimeIndex.h/.c` | Time-ordered event index |
-| `src/Event.h/.c` | Event construction |
-| `src/Stamp.h/.c` | Evidential base (circular reasoning prevention) |
-| `src/Table.h/.c` | Fixed-size sorted implication tables |
-| `src/Shell.h/.c` | Interactive REPL and command processing |
-| `src/Stats.h/.c` | Runtime statistics |
-| `src/Globals.h/.c` | Error codes, assert macro, hash, RNG |
-| `src/Config.h` | All compile-time parameters (226+ constants) |
-| `src/main.c` | Entry point: test runner, shell, rule-table generation |
-| `src/unit_tests/` | 10 unit tests |
-| `src/system_tests/` | 13 system tests |
+| `src/engine/NAR.h/.c` | Public API, `NAR_t` definition, lifecycle |
+| `src/engine/Cycle.h/.c` | Main reasoning loop (`Cycle_Perform`) |
+| `src/engine/Decision.h/.c` | Decision making, motor babbling, anticipation |
+| `src/engine/Memory.h/.c` | Concept storage, priority queues, hash tables |
+| `src/engine/NAL.h/.c` | All inference rules (generated into RuleTable.c at build time) |
+| `src/engine/Narsese.h/.c` | Parser and term encoder |
+| `src/engine/Inference.h/.c` | Temporal/procedural inference primitives |
+| `src/engine/Truth.h/.c` | Truth-function arithmetic |
+| `src/engine/Variable.h/.c` | Variable unification and substitution |
+| `src/engine/InvertedAtomIndex.h/.c` | Fast concept lookup by atom |
+| `src/engine/OccurrenceTimeIndex.h/.c` | Time-ordered event index |
+| `src/engine/Event.h/.c` | Event construction |
+| `src/engine/Stamp.h/.c` | Evidential base (circular reasoning prevention) |
+| `src/engine/Table.h/.c` | Fixed-size sorted implication tables |
+| `src/engine/Shell.h/.c` | Interactive REPL and command processing |
+| `src/engine/Stats.h/.c` | Runtime statistics |
+| `src/engine/Globals.h/.c` | Error codes, assert macro, hash, RNG |
+| `src/engine/Config.h` | All compile-time parameters (226+ constants) |
+| `src/engine/main.c` | Entry point: test runner, shell, rule-table generation |
+| `src/engine/unit_tests/` | 10 unit tests |
+| `src/engine/system_tests/` | 13 system tests |
+| `src/compiler/driftscript.c` | DriftScript-to-Narsese compiler |
 | `examples/python/driftnars.py` | Python ctypes wrapper class |
 | `examples/python/example.py` | Python usage example |
 | `docs/narsese_primer.md` | Comprehensive Narsese language reference |
@@ -177,7 +178,7 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 
 ---
 
-## Key configuration parameters (`src/Config.h`)
+## Key configuration parameters (`src/engine/Config.h`)
 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
@@ -213,7 +214,7 @@ Runtime-tunable fields live directly on `NAR_t` (e.g. `nar->DECISION_THRESHOLD`,
 
 ## Common pitfalls
 
-- **Don't edit `src/RuleTable.c`** — it is regenerated on every build.
+- **Don't edit `src/engine/RuleTable.c`** — it is regenerated on every build.
 - **Operation names must start with `^`** — `NAR_AddOperation` asserts this.
 - **Eternal goals are not supported** — `NAR_AddInputNarsese` returns `NAR_ERR_PARSE` for `!`
   without a tense marker.

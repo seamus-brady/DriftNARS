@@ -4,9 +4,9 @@ DriftScript is a Lisp-like language that compiles to Narsese. It replaces angle
 brackets, arrows, and cryptic copula symbols with S-expressions using human-readable
 keywords.
 
-DriftScript is a pure Python preprocessor: DriftScript text goes in, Narsese strings
-come out, and those are fed directly to DriftNARS via `add_narsese()` or
-`add_driftscript()`.
+DriftScript is compiled by the C compiler at `src/compiler/driftscript.c` (built as
+`bin/driftscript`). DriftScript text goes in, Narsese and shell commands come out, and
+those are fed to DriftNARS via `add_driftscript()` or piped to `bin/driftnars shell`.
 
 ## Quick Start
 
@@ -508,23 +508,21 @@ Marks the next input as occurring at the same time step as the previous one.
 
 ## Integration
 
-### Standalone compiler
+### Standalone compiler (CLI)
 
-```python
-from driftscript import DriftScript
+```bash
+# Compile DriftScript to Narsese on stdout
+echo '(believe (inherit "bird" "animal"))' | bin/driftscript
+# => <bird --> animal>.
 
-ds = DriftScript()
+# Pipe directly into the DriftNARS shell
+echo '(believe (inherit "bird" "animal"))' | bin/driftscript | bin/driftnars shell
 
-# Compile to structured results
-results = ds.compile('(believe (inherit "bird" "animal"))')
-# => [CompileResult(kind='narsese', value='<bird --> animal>.')]
-
-# Get Narsese strings only (raises on directives)
-narsese = ds.to_narsese('(believe (inherit "A" "B"))')
-# => ['<A --> B>.']
+# Run inline tests
+bin/driftscript --test
 ```
 
-### With DriftNARS
+### With DriftNARS (Python)
 
 ```python
 from driftnars import DriftNARS

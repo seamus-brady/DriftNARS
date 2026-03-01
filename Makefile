@@ -60,10 +60,10 @@ BINDIR   := bin
 
 # ── Sources ───────────────────────────────────────────────────────────────────
 # Exclude generated RuleTable.c from the static wildcard expansion
-SRCS_CORE := $(filter-out src/RuleTable.c, $(wildcard src/*.c))
+SRCS_CORE := $(filter-out src/engine/RuleTable.c, $(wildcard src/engine/*.c))
 
 # ── Stage-2 object files ──────────────────────────────────────────────────────
-OBJS_CORE := $(patsubst src/%.c,            $(BUILDDIR)/%.o,            $(SRCS_CORE))
+OBJS_CORE := $(patsubst src/engine/%.c,     $(BUILDDIR)/%.o,            $(SRCS_CORE))
 OBJS_GEN  := $(BUILDDIR)/RuleTable.o
 OBJS_ALL  := $(OBJS_CORE) $(OBJS_GEN)
 OBJS_LIB  := $(filter-out $(BUILDDIR)/main.o, $(OBJS_ALL))
@@ -81,16 +81,16 @@ $(BUILDDIR)/bootstrap: $(SRCS_CORE)
 	$(CC) $(CFLAGS) $(WFLAGS) -DSTAGE=1 $^ $(LDFLAGS) -o $@
 
 # ── Generated rule table ───────────────────────────────────────────────────────
-src/RuleTable.c: $(BUILDDIR)/bootstrap
+src/engine/RuleTable.c: $(BUILDDIR)/bootstrap
 	$(BUILDDIR)/bootstrap NAL_GenerateRuleTable > $@
 
 # ── Stage-2 object compilation ─────────────────────────────────────────────────
 # Generated file gets no WFLAGS — the output is machine-written
-$(BUILDDIR)/RuleTable.o: src/RuleTable.c
+$(BUILDDIR)/RuleTable.o: src/engine/RuleTable.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(SSE_FLAGS) -DSTAGE=2 -c $< -o $@
 
-$(BUILDDIR)/%.o: src/%.c
+$(BUILDDIR)/%.o: src/engine/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(WFLAGS) $(SSE_FLAGS) -DSTAGE=2 -MMD -MP -c $< -o $@
 
@@ -110,11 +110,9 @@ $(BINDIR)/libdriftnars.$(SHLIB_EXT): $(OBJS_LIB)
 	$(CC) $(SHLIB_LFLAGS) $(CFLAGS) $(SSE_FLAGS) $^ $(LDFLAGS) -o $@
 
 # ── DriftScript compiler (standalone, no library dependency) ──────────────────
-$(BINDIR)/driftscript: tools/driftscript.c | $(BINDIR)
+$(BINDIR)/driftscript: src/compiler/driftscript.c
+	@mkdir -p $(dir $@)
 	$(CC) -std=c99 -pedantic -O2 -g -Wall -Wextra -o $@ $<
-
-$(BINDIR):
-	@mkdir -p $@
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 test: $(BINDIR)/driftnars
@@ -122,7 +120,7 @@ test: $(BINDIR)/driftnars
 
 # ── Clean ──────────────────────────────────────────────────────────────────────
 clean:
-	rm -rf $(BUILDDIR) $(BINDIR) src/RuleTable.c
+	rm -rf $(BUILDDIR) $(BINDIR) src/engine/RuleTable.c
 
 # Pull in generated header dependencies (silently absent on first build)
 -include $(DEPFILES)

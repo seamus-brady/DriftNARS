@@ -14,6 +14,7 @@ import ctypes
 import ctypes.util
 import os
 import platform
+import subprocess
 import sys
 
 # Callback C function types (must match typedefs in NAR.h)
@@ -81,6 +82,23 @@ def _find_lib():
         return found
     raise FileNotFoundError(
         f"Cannot find libdriftnars.{ext}. Build with 'make' first.\n"
+        f"Searched: {candidates}"
+    )
+
+
+def _find_driftscript_bin():
+    """Locate the driftscript compiler binary."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(here, "..", "..", "bin", "driftscript"),
+        os.path.join(os.getcwd(), "bin", "driftscript"),
+        os.path.join(os.getcwd(), "driftscript"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return os.path.abspath(path)
+    raise FileNotFoundError(
+        "Cannot find driftscript binary. Build with 'make' first.\n"
         f"Searched: {candidates}"
     )
 
@@ -191,22 +209,32 @@ class DriftNARS:
     def add_driftscript(self, source):
         """Compile DriftScript source and feed it to the reasoner.
 
-        Handles narsese input, shell commands, cycle directives, and operation
-        registration automatically.
+        Uses the C driftscript compiler (bin/driftscript) via subprocess.
+        Output lines are dispatched as shell commands (* prefix), cycle
+        directives (all-digit lines), or Narsese input.
         """
-        from driftscript import DriftScript
-        ds = DriftScript()
-        for result in ds.compile(source):
-            if result.kind == "narsese":
-                self.add_narsese(result.value)
-            elif result.kind == "shell_command":
-                self._process_shell_input(result.value)
-            elif result.kind == "cycles":
-                self.cycles(int(result.value))
-            elif result.kind == "def_op":
-                self.add_operation(result.value)
+        bin_path = _find_driftscript_bin()
+        result = subprocess.run(
+            [bin_path],
+            input=source,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"driftscript compiler failed (exit {result.returncode}):\n"
+                f"{result.stderr.strip()}"
+            )
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("*"):
+                self._process_shell_input(line)
+            elif line.isdigit():
+                self.cycles(int(line))
             else:
-                raise ValueError(f"Unknown DriftScript result kind: {result.kind!r}")
+                self.add_narsese(line)
 
     def on_execution(self, callback):
         """Set execution callback: callback(op_name, args)"""
