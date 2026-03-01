@@ -119,6 +119,20 @@ void NAR_AddOperation(NAR_t *nar, char *operator_name, Action procedure)
 
 static void NAR_PrintAnswer(NAR_t *nar, Stamp stamp, Term best_term, Truth best_truth, long answerOccurrenceTime, long answerCreationTime)
 {
+    if(nar->answer_handler)
+    {
+        if(best_truth.confidence == 1.1)
+        {
+            nar->answer_handler(nar->answer_handler_userdata, "None", 0.0, 0.0, answerOccurrenceTime, answerCreationTime);
+        }
+        else
+        {
+            char buf[NARSESE_SPRINT_BUFSIZE];
+            Narsese_SprintTerm(nar, &best_term, buf, sizeof(buf));
+            nar->answer_handler(nar->answer_handler_userdata, buf,
+                best_truth.frequency, best_truth.confidence, answerOccurrenceTime, answerCreationTime);
+        }
+    }
     fputs("Answer: ", stdout);
     if(best_truth.confidence == 1.1)
     {
@@ -330,4 +344,39 @@ int NAR_AddInputNarsese2(NAR_t *nar, char *narsese_sentence, bool queryCommand, 
 int NAR_AddInputNarsese(NAR_t *nar, char *narsese_sentence)
 {
     return NAR_AddInputNarsese2(nar, narsese_sentence, false, 0.0);
+}
+
+void NAR_SetEventHandler(NAR_t *nar, NAR_EventHandler handler, void *userdata)
+{
+    nar->event_handler = handler;
+    nar->event_handler_userdata = userdata;
+}
+
+void NAR_SetAnswerHandler(NAR_t *nar, NAR_AnswerHandler handler, void *userdata)
+{
+    nar->answer_handler = handler;
+    nar->answer_handler_userdata = userdata;
+}
+
+void NAR_SetDecisionHandler(NAR_t *nar, NAR_DecisionHandler handler, void *userdata)
+{
+    nar->decision_handler = handler;
+    nar->decision_handler_userdata = userdata;
+}
+
+void NAR_SetExecutionHandler(NAR_t *nar, NAR_ExecutionHandler handler, void *userdata)
+{
+    nar->execution_handler = handler;
+    nar->execution_handler_userdata = userdata;
+}
+
+static Feedback NAR_nop_action(Term args)
+{
+    (void)args;
+    return (Feedback) {0};
+}
+
+void NAR_AddOperationName(NAR_t *nar, const char *op_name)
+{
+    NAR_AddOperation(nar, (char *)op_name, NAR_nop_action);
 }

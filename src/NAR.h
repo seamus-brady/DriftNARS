@@ -43,6 +43,23 @@
 //---------//
 #define NAR_DEFAULT_TRUTH ((Truth) { .frequency = NAR_DEFAULT_FREQUENCY, .confidence = NAR_DEFAULT_CONFIDENCE })
 
+//Callback reason codes//
+//---------------------//
+#define NAR_EVENT_INPUT   1
+#define NAR_EVENT_DERIVED 2
+#define NAR_EVENT_REVISED 3
+
+//Callback typedefs//
+//-----------------//
+typedef void (*NAR_EventHandler)(void *userdata, int reason, const char *narsese,
+    char type, double freq, double conf, double priority, long occTime, double dt);
+typedef void (*NAR_AnswerHandler)(void *userdata, const char *narsese,
+    double freq, double conf, long occTime, long createTime);
+typedef void (*NAR_DecisionHandler)(void *userdata, double expectation,
+    const char *imp, double imp_freq, double imp_conf, double imp_dt,
+    const char *prec, double prec_freq, double prec_conf, long prec_occTime);
+typedef void (*NAR_ExecutionHandler)(void *userdata, const char *op, const char *args);
+
 ///////////////////////////////////////////////////////////////////////////////
 //  NAR_t — full per-instance context (all mutable global state lives here) //
 ///////////////////////////////////////////////////////////////////////////////
@@ -146,6 +163,16 @@ struct NAR_t {
     long         stats_concepts_matched_total;
     long         stats_concepts_matched_max;
 
+    /* ── Output callbacks ─────────────────────────────── */
+    NAR_EventHandler     event_handler;
+    void                *event_handler_userdata;
+    NAR_AnswerHandler    answer_handler;
+    void                *answer_handler_userdata;
+    NAR_DecisionHandler  decision_handler;
+    void                *decision_handler_userdata;
+    NAR_ExecutionHandler execution_handler;
+    void                *execution_handler_userdata;
+
     /* ── NAL (NAL.c) ────────────────────────────────────── */
     int          nal_ruleID;
     int          nal_atomsCounter;
@@ -173,4 +200,11 @@ void NAR_AddOperation(NAR_t *nar, char *operator_name, Action procedure);
 int  NAR_AddInputNarsese(NAR_t *nar, char *narsese_sentence);
 //Add a Narsese sentence with query functionality; returns NAR_OK or NAR_ERR_PARSE
 int  NAR_AddInputNarsese2(NAR_t *nar, char *narsese_sentence, bool queryCommand, double answerTruthExpThreshold);
+//Set output callbacks (pass NULL to disable)
+void NAR_SetEventHandler(NAR_t *nar, NAR_EventHandler handler, void *userdata);
+void NAR_SetAnswerHandler(NAR_t *nar, NAR_AnswerHandler handler, void *userdata);
+void NAR_SetDecisionHandler(NAR_t *nar, NAR_DecisionHandler handler, void *userdata);
+void NAR_SetExecutionHandler(NAR_t *nar, NAR_ExecutionHandler handler, void *userdata);
+//Register an operation by name with a no-op action (for library consumers using execution callbacks)
+void NAR_AddOperationName(NAR_t *nar, const char *op_name);
 #endif

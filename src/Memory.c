@@ -201,6 +201,14 @@ bool Memory_addCyclingEvent(NAR_t *nar, Event *e, double priority, long currentT
 
 static void Memory_printAddedKnowledge(NAR_t *nar, Stamp *stamp, Term *term, char type, Truth *truth, long occurrenceTime, double occurrenceTimeOffset, double priority, bool input, bool derived, bool revised, bool controlInfo, bool selected)
 {
+    if(nar->event_handler)
+    {
+        int reason = input ? NAR_EVENT_INPUT : (revised ? NAR_EVENT_REVISED : NAR_EVENT_DERIVED);
+        char buf[NARSESE_SPRINT_BUFSIZE];
+        Narsese_SprintTerm(nar, term, buf, sizeof(buf));
+        nar->event_handler(nar->event_handler_userdata, reason, buf,
+            type, truth->frequency, truth->confidence, priority, occurrenceTime, occurrenceTimeOffset);
+    }
     if((input && nar->PRINT_INPUT) || (!input && nar->PRINT_DERIVATIONS && priority > nar->PRINT_EVENTS_PRIORITY_THRESHOLD))
     {
         if(controlInfo)

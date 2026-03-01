@@ -20,7 +20,7 @@ the full change history.
 ## Build
 
 ```bash
-make                        # builds bin/driftnars + bin/libdriftnars.a
+make                        # builds bin/driftnars + .a + .dylib/.so
 make OPENMP=1               # with OpenMP threading
 make test                   # run all unit + system tests
 make clean                  # remove build artifacts
@@ -50,7 +50,18 @@ Event  NAR_AddInputGoal(NAR_t *nar, Term term);
 // Execution
 void   NAR_Cycles(NAR_t *nar, int cycles);
 void   NAR_AddOperation(NAR_t *nar, char *op_name, Action callback);
+void   NAR_AddOperationName(NAR_t *nar, const char *op_name);  // no-op action (use with callbacks)
 
+// Output callbacks (all optional — pass NULL handler to disable)
+void   NAR_SetEventHandler(NAR_t *nar, NAR_EventHandler handler, void *userdata);
+void   NAR_SetAnswerHandler(NAR_t *nar, NAR_AnswerHandler handler, void *userdata);
+void   NAR_SetDecisionHandler(NAR_t *nar, NAR_DecisionHandler handler, void *userdata);
+void   NAR_SetExecutionHandler(NAR_t *nar, NAR_ExecutionHandler handler, void *userdata);
+
+// Term to string
+int    Narsese_SprintTerm(NAR_t *nar, Term *term, char *buf, int bufsize);
+
+// Reason codes: NAR_EVENT_INPUT=1, NAR_EVENT_DERIVED=2, NAR_EVENT_REVISED=3
 // Error codes (defined in src/Globals.h)
 // NAR_OK = 0, NAR_ERR_PARSE = -1, NAR_ERR_MEM = -2, NAR_ERR_INIT = -3
 ```
@@ -93,6 +104,21 @@ typedef Feedback (*Action)(Term args);
 All operation callbacks take a single `Term args` parameter. They do **not** receive
 `NAR_t *nar`. If a callback needs to feed input back to the reasoner, it must hold its
 own `NAR_t *` reference externally.
+
+### Output callbacks
+
+Four optional callback types let library consumers receive structured events instead of
+parsing stdout. All use flat C primitives (no struct params) for FFI compatibility:
+
+- **`NAR_EventHandler`** — fires for every input/derived/revised event
+- **`NAR_AnswerHandler`** — fires when a question is answered
+- **`NAR_DecisionHandler`** — fires when a decision is made above threshold
+- **`NAR_ExecutionHandler`** — fires when an operation is about to execute
+
+Callbacks fire **before** the existing printf output, regardless of `PRINT_INPUT` /
+`PRINT_DERIVATIONS` flags. Set a handler to `NULL` to disable it.
+
+Python bindings: `examples/python/driftnars.py` wraps the shared library via ctypes.
 
 ### Narsese syntax quick reference
 
@@ -142,6 +168,9 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `src/main.c` | Entry point: test runner, shell, rule-table generation |
 | `src/unit_tests/` | 10 unit tests |
 | `src/system_tests/` | 13 system tests |
+| `examples/python/driftnars.py` | Python ctypes wrapper class |
+| `examples/python/example.py` | Python usage example |
+| `docs/narsese_primer.md` | Comprehensive Narsese language reference |
 
 **Pure value functions (no `nar` param):** `Truth_*`, `Stamp_*`, `Term_*`,
 `PriorityQueue_*`, `HashTable_*`, `Stack_*`, `Usage_*`.

@@ -855,6 +855,113 @@ double Narsese_getAtomValue(NAR_t *nar, Atom atom)
     return nar->atom_values[(int) atom-1];
 }
 
+/* ── Sprint (write-to-buffer) variants of PrintAtom / PrintTermPrettyRecursive ── */
+
+typedef struct {
+    char *buf;
+    int pos;
+    int bufsize;
+} SprintCtx;
+
+static void sprint_append(SprintCtx *ctx, const char *str)
+{
+    while(*str && ctx->pos < ctx->bufsize - 1)
+    {
+        ctx->buf[ctx->pos++] = *str++;
+    }
+}
+
+static void Narsese_SprintAtom(NAR_t *nar, Atom atom, SprintCtx *ctx)
+{
+    if(atom)
+    {
+        if(Narsese_copulaEquals(nar, atom, INHERITANCE))        sprint_append(ctx, "-->");
+        else if(Narsese_copulaEquals(nar, atom, TEMPORAL_IMPLICATION)) sprint_append(ctx, "=/>");
+        else if(Narsese_copulaEquals(nar, atom, EQUIVALENCE))   sprint_append(ctx, "<=>");
+        else if(Narsese_copulaEquals(nar, atom, DISJUNCTION))   sprint_append(ctx, "||");
+        else if(Narsese_copulaEquals(nar, atom, SEQUENCE))      sprint_append(ctx, "&/");
+        else if(Narsese_copulaEquals(nar, atom, HAS_CONTINUOUS_PROPERTY)) sprint_append(ctx, "|->");
+        else if(Narsese_copulaEquals(nar, atom, IMPLICATION))   sprint_append(ctx, "==>");
+        else if(Narsese_copulaEquals(nar, atom, CONJUNCTION))   sprint_append(ctx, "&&");
+        else if(Narsese_copulaEquals(nar, atom, SIMILARITY))    sprint_append(ctx, "<->");
+        else if(Narsese_copulaEquals(nar, atom, EXT_IMAGE1))    sprint_append(ctx, "/1");
+        else if(Narsese_copulaEquals(nar, atom, EXT_IMAGE2))    sprint_append(ctx, "/2");
+        else if(Narsese_copulaEquals(nar, atom, INT_IMAGE1))    sprint_append(ctx, "\\1");
+        else if(Narsese_copulaEquals(nar, atom, INT_IMAGE2))    sprint_append(ctx, "\\2");
+        else sprint_append(ctx, nar->atom_names[atom-1]);
+    }
+    else
+    {
+        sprint_append(ctx, "@");
+    }
+}
+
+static void Narsese_SprintTermRecursive(NAR_t *nar, Term *term, int index, SprintCtx *ctx)
+{
+    Atom atom = term->atoms[index-1];
+    if(!atom) return;
+    int child1 = index*2;
+    int child2 = index*2+1;
+    bool hasLeftChild = child1 < COMPOUND_TERM_SIZE_MAX && term->atoms[child1-1];
+    bool hasRightChild = child2 < COMPOUND_TERM_SIZE_MAX && term->atoms[child2-1] && !Narsese_copulaEquals(nar, term->atoms[child2-1], SET_TERMINATOR);
+    bool isSingularProduct = Narsese_copulaEquals(nar, atom, PRODUCT) && !hasRightChild;
+    bool isNegation = Narsese_copulaEquals(nar, atom, NEGATION);
+    bool isFrequencyGreater = Narsese_copulaEquals(nar, atom, SEQUENCE) && !hasRightChild;
+    bool isFrequencyEqual = Narsese_copulaEquals(nar, atom, SIMILARITY) && !hasRightChild;
+    bool isExtSet = Narsese_copulaEquals(nar, atom, EXT_SET);
+    bool isIntSet = Narsese_copulaEquals(nar, atom, INT_SET);
+    bool isStatement = !isFrequencyEqual && (Narsese_copulaEquals(nar, atom, TEMPORAL_IMPLICATION) || Narsese_copulaEquals(nar, atom, INHERITANCE) || Narsese_copulaEquals(nar, atom, SIMILARITY) ||
+                       Narsese_copulaEquals(nar, atom, IMPLICATION) || Narsese_copulaEquals(nar, atom, EQUIVALENCE) || Narsese_copulaEquals(nar, atom, HAS_CONTINUOUS_PROPERTY));
+    if(isExtSet)
+        sprint_append(ctx, hasLeftChild ? "{" : "");
+    else if(isIntSet)
+        sprint_append(ctx, hasLeftChild ? "[" : "");
+    else if(isStatement)
+        sprint_append(ctx, hasLeftChild ? "<" : "");
+    else
+    {
+        sprint_append(ctx, hasLeftChild ? "(" : "");
+        if(isNegation || isSingularProduct || isFrequencyGreater || isFrequencyEqual)
+        {
+            if(isFrequencyGreater) sprint_append(ctx, "+");
+            else if(isFrequencyEqual) sprint_append(ctx, "=");
+            else Narsese_SprintAtom(nar, atom, ctx);
+            sprint_append(ctx, " ");
+        }
+    }
+    if(child1 < COMPOUND_TERM_SIZE_MAX)
+        Narsese_SprintTermRecursive(nar, term, child1, ctx);
+    if(hasRightChild)
+        sprint_append(ctx, hasLeftChild ? " " : "");
+    if(!isExtSet && !isIntSet && !Narsese_copulaEquals(nar, atom, SET_TERMINATOR))
+    {
+        if(!isNegation && !isSingularProduct && !isFrequencyEqual && !isFrequencyGreater)
+        {
+            Narsese_SprintAtom(nar, atom, ctx);
+            sprint_append(ctx, hasLeftChild ? " " : "");
+        }
+    }
+    if(child2 < COMPOUND_TERM_SIZE_MAX)
+        Narsese_SprintTermRecursive(nar, term, child2, ctx);
+    if(isExtSet)
+        sprint_append(ctx, hasLeftChild ? "}" : "");
+    else if(isIntSet)
+        sprint_append(ctx, hasLeftChild ? "]" : "");
+    else if(isStatement)
+        sprint_append(ctx, hasLeftChild ? ">" : "");
+    else
+        sprint_append(ctx, hasLeftChild ? ")" : "");
+}
+
+int Narsese_SprintTerm(NAR_t *nar, Term *term, char *buf, int bufsize)
+{
+    if(bufsize <= 0) return -1;
+    SprintCtx ctx = { .buf = buf, .pos = 0, .bufsize = bufsize };
+    Narsese_SprintTermRecursive(nar, term, 1, &ctx);
+    buf[ctx.pos] = '\0';
+    return ctx.pos >= bufsize - 1 ? -1 : ctx.pos;
+}
+
 int Narsese_SequenceLength(NAR_t *nar, Term *sequence)
 {
     if(Narsese_copulaEquals(nar, sequence->atoms[0], SEQUENCE))
