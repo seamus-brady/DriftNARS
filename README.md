@@ -82,14 +82,30 @@ that are not set remain silent.
 ```python
 from driftnars import DriftNARS
 
+def on_execution(op_name, args):
+    """Called by DriftNARS when it decides to execute an operation."""
+    if op_name == "^press":
+        print("Button pressed!")
+
 with DriftNARS() as nar:
     nar.on_answer(lambda n, f, c, occ, ct: print(f"Answer: {n} f={f:.2f} c={c:.2f}"))
-    nar.add_narsese("<bird --> animal>.")
-    nar.add_narsese("<robin --> bird>.")
-    nar.add_narsese("<robin --> animal>?")
+    nar.on_execution(on_execution)
+
+    # Register an operation — DriftNARS will call on_execution when it fires
+    nar.add_operation("^press")
+
+    # Teach a rule: "if light is on and you press, light goes off"
+    nar.add_narsese("<(light_on &/ ^press) =/> light_off>.")
+
+    # Tell the system the precondition holds
+    nar.add_narsese("light_on. :|:")
+
+    # Give the system a goal — this triggers ^press via the learned rule
+    nar.add_narsese("light_off! :|:")
 ```
 
-See `examples/python/` for a complete example with all four callback types.
+See `examples/python/` for a complete example with all four callback types
+and `docs/narsese_primer.md` for a comprehensive Narsese language reference.
 
 ## License
 

@@ -170,6 +170,7 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `src/system_tests/` | 13 system tests |
 | `examples/python/driftnars.py` | Python ctypes wrapper class |
 | `examples/python/example.py` | Python usage example |
+| `docs/narsese_primer.md` | Comprehensive Narsese language reference |
 
 **Pure value functions (no `nar` param):** `Truth_*`, `Stamp_*`, `Term_*`,
 `PriorityQueue_*`, `HashTable_*`, `Stack_*`, `Usage_*`.
