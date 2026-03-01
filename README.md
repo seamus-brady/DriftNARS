@@ -83,29 +83,58 @@ that are not set remain silent.
 from driftnars import DriftNARS
 
 def on_execution(op_name, args):
-    """Called by DriftNARS when it decides to execute an operation."""
-    if op_name == "^press":
-        print("Button pressed!")
+    """Called by DriftNARS when it decides to execute an operation.
+
+    op_name: e.g. "^goto"
+    args:    Narsese product string, e.g. "({SELF} * park)", or "" if none
+    """
+    if op_name == "^goto":
+        target = args.strip("()").split(" * ")[-1]
+        print(f"Going to {target}!")
 
 with DriftNARS() as nar:
     nar.on_answer(lambda n, f, c, occ, ct: print(f"Answer: {n} f={f:.2f} c={c:.2f}"))
     nar.on_execution(on_execution)
 
     # Register an operation — DriftNARS will call on_execution when it fires
-    nar.add_operation("^press")
+    nar.add_operation("^goto")
 
-    # Teach a rule: "if light is on and you press, light goes off"
-    nar.add_narsese("<(light_on &/ ^press) =/> light_off>.")
+    # Teach: "if at home and you goto(SELF,park), you arrive at park"
+    nar.add_narsese("<(at_home &/ <(*, {SELF}, park) --> ^goto>) =/> at_park>.")
 
-    # Tell the system the precondition holds
-    nar.add_narsese("light_on. :|:")
-
-    # Give the system a goal — this triggers ^press via the learned rule
-    nar.add_narsese("light_off! :|:")
+    # Precondition holds, give a goal — triggers ^goto with args
+    nar.add_narsese("at_home. :|:")
+    nar.add_narsese("at_park! :|:")
+    # => on_execution called with op_name="^goto", args="({SELF} * park)"
 ```
 
 See `examples/python/` for a complete example with all four callback types
 and `docs/narsese_primer.md` for a comprehensive Narsese language reference.
+
+#### DriftScript
+
+DriftScript is a Lisp-like language that compiles to Narsese, replacing angle brackets
+and cryptic copula symbols with readable S-expressions:
+
+```python
+# Instead of raw Narsese:
+nar.add_narsese("<(at_home &/ <(*, {SELF}, park) --> ^goto>) =/> at_park>.")
+
+# Write DriftScript:
+nar.add_driftscript("(believe (predict (seq at_home (call ^goto (ext-set SELF) park)) at_park))")
+```
+
+Side-by-side comparison:
+
+| Narsese | DriftScript |
+|---------|-------------|
+| `<bird --> animal>.` | `(believe (inherit bird animal))` |
+| `<robin --> animal>?` | `(ask (inherit robin animal))` |
+| `light_off! :\|:` | `(goal light_off)` |
+| `<($1 --> bird) ==> ($1 --> animal)>.` | `(believe (imply (inherit $x bird) (inherit $x animal)))` |
+
+See `docs/driftscript_reference.md` for the full language reference and
+`examples/python/example_driftscript.py` for a complete example.
 
 ## License
 

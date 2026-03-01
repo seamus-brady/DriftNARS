@@ -126,6 +126,8 @@ class DriftNARS:
         lib.NAR_SetDecisionHandler.restype = None
         lib.NAR_SetExecutionHandler.argtypes = [ctypes.c_void_p, _ExecutionCB, ctypes.c_void_p]
         lib.NAR_SetExecutionHandler.restype = None
+        lib.Shell_ProcessInput.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        lib.Shell_ProcessInput.restype = ctypes.c_int
 
     def close(self):
         if self._nar:
@@ -181,6 +183,28 @@ class DriftNARS:
         ref = _DecisionCB(_wrapper)
         self._cb_refs.append(ref)
         self._lib.NAR_SetDecisionHandler(self._nar, ref, None)
+
+    def _process_shell_input(self, line):
+        """Send a shell command (e.g. '*reset', '*volume=100') to the NAR."""
+        return self._lib.Shell_ProcessInput(self._nar, line.encode("utf-8"))
+
+    def add_driftscript(self, source):
+        """Compile DriftScript source and feed it to the reasoner.
+
+        Handles narsese input, shell commands, cycle directives, and operation
+        registration automatically.
+        """
+        from driftscript import DriftScript
+        ds = DriftScript()
+        for result in ds.compile(source):
+            if result.kind == "narsese":
+                self.add_narsese(result.value)
+            elif result.kind == "shell_command":
+                self._process_shell_input(result.value)
+            elif result.kind == "cycles":
+                self.cycles(int(result.value))
+            elif result.kind == "def_op":
+                self.add_operation(result.value)
 
     def on_execution(self, callback):
         """Set execution callback: callback(op_name, args)"""

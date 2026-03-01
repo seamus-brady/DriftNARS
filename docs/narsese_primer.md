@@ -435,8 +435,45 @@ Operations can take arguments using the product-inheritance pattern:
 ```
 
 The `{SELF}` in the first product position marks it as an executable operation
-belonging to this agent. When the operation fires, the callback receives the full
-argument term.
+belonging to this agent. When the operation fires, the execution callback receives
+`op_name` (e.g. `"^goto"`) and `args` as a Narsese product string (e.g.
+`"({SELF} * park)"`). For operations without arguments, `args` is an empty string.
+
+A full example with argument handling:
+
+```python
+nar.add_operation("^goto")
+
+# Teach: "if at_home and you goto(SELF, park), you arrive at park"
+nar.add_narsese("<(at_home &/ <(*, {SELF}, park) --> ^goto>) =/> at_park>.")
+nar.add_narsese("at_home. :|:")
+nar.add_narsese("at_park! :|:")
+
+# => execution callback fires with op_name="^goto", args="({SELF} * park)"
+```
+
+### Parsing args in the callback
+
+The `args` string is a Narsese product term. To extract the parts:
+
+```python
+def parse_product_args(args):
+    """Parse '({SELF} * park)' into ['SELF', 'park']."""
+    if not args or " * " not in args:
+        return [args] if args else []
+    inner = args.strip("()")
+    return [p.strip().strip("{}") for p in inner.split(" * ")]
+
+def on_execution(op_name, args):
+    if op_name == "^goto":
+        parts = parse_product_args(args)
+        target = parts[-1]   # "park"
+        robot.go_to(target)
+    elif op_name == "^grab":
+        robot.grab()
+
+nar.on_execution(on_execution)
+```
 
 ### The execution callback
 
@@ -447,12 +484,14 @@ registers a no-op C callback) and handle execution via the execution callback:
 def on_execution(op_name, args):
     if op_name == "^grab":
         robot.grab()
-    elif op_name == "^left":
-        robot.turn_left()
+    elif op_name == "^goto":
+        parts = args.strip("()").split(" * ")
+        target = parts[-1]
+        robot.go_to(target)
 
 nar.on_execution(on_execution)
 nar.add_operation("^grab")
-nar.add_operation("^left")
+nar.add_operation("^goto")
 ```
 
 This is simpler than writing C callbacks and works naturally from any language.
@@ -735,7 +774,24 @@ nar.add_operation("^press")
 nar.add_narsese("<(light_on &/ ^press) =/> light_off>.")   # teach the rule
 nar.add_narsese("light_on. :|:")                            # precondition holds
 nar.add_narsese("light_off! :|:")                           # goal
-# => ^press executes
+# => ^press executes (args="")
+```
+
+### Trigger an operation with arguments
+
+```python
+def on_execution(op_name, args):
+    if op_name == "^goto":
+        parts = args.strip("()").split(" * ")
+        target = parts[-1]
+        print(f"Going to {target}")
+
+nar.on_execution(on_execution)
+nar.add_operation("^goto")
+nar.add_narsese("<(at_home &/ <(*, {SELF}, park) --> ^goto>) =/> at_park>.")
+nar.add_narsese("at_home. :|:")
+nar.add_narsese("at_park! :|:")
+# => ^goto executes (args="({SELF} * park)")
 ```
 
 ### Learn from experience (no explicit rule)
@@ -860,8 +916,11 @@ Fires when an operation is about to execute.
 
 ```python
 def on_execution(op_name, args):
-    # op_name: e.g. "^left", "^grab"
-    # args: the argument term as a string, or "" if none
+    # op_name: e.g. "^left", "^grab", "^goto"
+    # args: Narsese product string, e.g. "({SELF} * park)", or "" if no arguments
+    #
+    # To extract argument parts from a product:
+    #   parts = args.strip("()").split(" * ")  # ["SELF}", "park"]
     pass
 ```
 
