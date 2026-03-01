@@ -508,6 +508,16 @@ Marks the next input as occurring at the same time step as the previous one.
 
 ## Integration
 
+### Tutorial
+
+For a progressive, hands-on introduction see `examples/driftscript/` — 10 runnable
+`.ds` files that build from first beliefs through temporal reasoning and multi-step
+planning. Start with:
+
+```bash
+bin/driftnars driftscript < examples/driftscript/01_hello.ds
+```
+
 ### Interactive REPL
 
 The `driftscript` subcommand launches an interactive REPL that compiles DriftScript

@@ -173,6 +173,7 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `src/compiler/driftscript.h` | Public API for DriftScript compiler (library mode) |
 | `examples/python/driftnars.py` | Python ctypes wrapper class |
 | `examples/python/example.py` | Python usage example |
+| `examples/driftscript/` | DriftScript tutorial (10 progressive `.ds` files) |
 | `docs/narsese_primer.md` | Comprehensive Narsese language reference |
 
 **Pure value functions (no `nar` param):** `Truth_*`, `Stamp_*`, `Term_*`,

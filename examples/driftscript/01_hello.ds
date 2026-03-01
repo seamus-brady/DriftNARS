@@ -1,0 +1,61 @@
+; ============================================================
+; 01_hello.ds — First steps with DriftScript
+; ============================================================
+;
+; What you'll learn:
+;   - How to state beliefs (facts)
+;   - How to ask questions
+;   - How the system deduces new knowledge
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/01_hello.ds
+; ============================================================
+
+; Suppress derived-event noise so we only see inputs and answers.
+(config volume 0)
+
+; --- Teach the system two facts ---
+
+; "bird" is a kind of "animal"
+(believe (inherit "bird" "animal"))
+
+; "robin" is a kind of "bird"
+(believe (inherit "robin" "bird"))
+
+; Give the system a few inference cycles to think.
+(cycles 5)
+
+; --- Ask a question ---
+
+; Is robin an animal? We never said so directly — the system must deduce it.
+(ask (inherit "robin" "animal"))
+
+; Look for this in the output:
+;   Answer: <robin --> animal>. ... Truth: frequency=1.000000, confidence=0.810000
+;
+; frequency=1.0 means "yes, definitely"
+; confidence=0.81 means the evidence is strong but indirect (deduced, not told)
+
+; Let the system finish answering.
+(cycles 5)
+
+; ============================================================
+; Key takeaway: NARS doesn't just store facts — it reasons.
+; We gave it "robin → bird" and "bird → animal", and it
+; figured out "robin → animal" on its own.
+; ============================================================
+
+; --- A second example: similarity ---
+
+(reset)
+(config volume 0)
+
+; Similarity is symmetric: cat resembles dog means dog resembles cat.
+(believe (similar "cat" "dog"))
+(ask (similar "dog" "cat"))
+
+; Look for:
+;   Answer: <dog <-> cat>. ... confidence=0.810000
+;
+; We said cat<->dog, and it deduced dog<->cat. Similarity works both ways.
+
+(cycles 3)

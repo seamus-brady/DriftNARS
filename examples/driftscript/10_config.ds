@@ -1,0 +1,136 @@
+; ============================================================
+; 10_config.ds — Tuning the reasoner
+; ============================================================
+;
+; What you'll learn:
+;   - config: adjusting reasoner parameters
+;   - cycles: running inference steps
+;   - reset: clearing memory
+;   - concurrent: marking simultaneous events
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/10_config.ds
+; ============================================================
+
+; --- volume: control output verbosity ---
+; 0 = only show Input, Answer, and execution lines.
+; 100 = show everything including derivations and selections.
+
+(config volume 0)
+(believe (inherit "bird" "animal"))
+(believe (inherit "robin" "bird"))
+(cycles 3)
+
+; Now turn up the volume to see derivations.
+(config volume 100)
+(believe (inherit "eagle" "bird"))
+(cycles 3)
+
+; Look for "Derived:" lines — these are intermediate inferences.
+; Turn it back down.
+(config volume 0)
+
+; --- cycles: run N inference steps ---
+; The system doesn't reason continuously. You control when
+; and how much it thinks.
+
+(cycles 1)    ; minimal — just 1 step
+(cycles 10)   ; more time to derive conclusions
+(cycles 100)  ; extensive reasoning (slower)
+
+; Tip: use small cycle counts (1-5) between inputs for responsive
+; behavior, larger counts (10-100) when you want thorough reasoning.
+
+; --- reset: clear memory and start fresh ---
+
+(reset)
+(config volume 0)
+
+; After reset, all concepts and beliefs are gone.
+(ask (inherit "robin" "bird"))
+; => Answer: None. (nothing in memory)
+
+(cycles 3)
+
+; Teach again from scratch.
+(believe (inherit "robin" "bird"))
+(ask (inherit "robin" "bird"))
+; => Answer: <robin --> bird>. (now it knows)
+
+(cycles 3)
+
+; --- decisionthreshold: when to act ---
+; The system only executes an operation if its expectation
+; exceeds this threshold. Default is 0.501.
+
+(reset)
+(config volume 0)
+(config motorbabbling 0)
+(def-op ^press)
+
+; Raise the threshold — the system becomes more cautious.
+(config decisionthreshold 0.85)
+
+(believe (predict (seq "light_on" (call ^press)) "light_off"))
+(believe "light_on" :now)
+(goal "light_off")
+(cycles 5)
+; With threshold 0.85, the system may NOT act because the
+; expectation (~0.79) is below the threshold.
+
+; Lower it — the system becomes more willing to act.
+(config decisionthreshold 0.5)
+(believe "light_on" :now)
+(goal "light_off")
+(cycles 5)
+; Now ^press should execute.
+
+; --- motorbabbling: random exploration ---
+
+(reset)
+(config volume 0)
+(def-op ^press)
+
+; motorbabbling=0.0 means no random actions (deterministic).
+(config motorbabbling 0.0)
+
+; motorbabbling=0.2 (default) means 20% chance of random action
+; when processing a goal — useful for learning through exploration.
+; (config motorbabbling 0.2)
+
+(cycles 3)
+
+; --- concurrent: same-timestep inputs ---
+
+(reset)
+(config volume 0)
+
+; Normally, each :now input gets the next time step.
+(believe "see_cat" :now)    ; time T
+(believe "see_dog" :now)    ; time T+1
+
+(cycles 1)
+(reset)
+(config volume 0)
+
+; With concurrent, two inputs share the same time step.
+(believe "see_cat" :now)    ; time T
+(concurrent)
+(believe "see_dog" :now)    ; also time T (same moment)
+
+; Use concurrent when multiple things are observed simultaneously.
+
+(cycles 3)
+
+; ============================================================
+; All config keys:
+;
+;   volume              0-100, output verbosity
+;   decisionthreshold   0.0-1.0, min expectation to act
+;   motorbabbling       0.0-1.0, random exploration rate
+;   anticipationconfidence  confidence for anticipation
+;   questionpriming     question priming parameter
+;   babblingops         number of operations for babbling
+;   similaritydistance  threshold for concept similarity
+;
+; See docs/driftscript_reference.md for complete details.
+; ============================================================

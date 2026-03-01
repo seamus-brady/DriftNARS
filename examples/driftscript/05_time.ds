@@ -1,0 +1,104 @@
+; ============================================================
+; 05_time.ds — Temporal reasoning
+; ============================================================
+;
+; What you'll learn:
+;   - Eternal vs present-tense beliefs
+;   - :now — marking events as happening right now
+;   - Temporal predictions with predict
+;   - :dt — temporal offset (time between cause and effect)
+;   - Time decay: beliefs lose confidence over time
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/05_time.ds
+; ============================================================
+
+(config volume 0)
+
+; --- Eternal beliefs ---
+; No tense marker = always true, outside of time.
+; Good for general knowledge.
+
+(believe (inherit "bird" "animal"))
+; => <bird --> animal>.  (no occurrence time)
+
+(cycles 1)
+
+; --- Present-tense beliefs with :now ---
+; Mark something as happening right now.
+; Each :now belief gets the current time step.
+
+(believe "raining" :now)
+; => raining. :|: occurrenceTime=...
+
+(cycles 1)
+
+(believe "ground_wet" :now)
+; => ground_wet. :|: occurrenceTime=...
+; This has a later occurrence time than "raining" above.
+
+(cycles 3)
+
+; --- Temporal prediction ---
+; predict = "if A then (temporally) B"
+; The system tracks that A happens before B.
+
+(reset)
+(config volume 0)
+(config motorbabbling 0)
+(def-op ^press)
+
+; Eternal prediction rule: pressing when light is on turns it off.
+(believe (predict (seq "light_on" (call ^press)) "light_off"))
+
+; Now trigger it with present-tense input.
+(believe "light_on" :now)
+(goal "light_off")
+; => ^press executed (the system acts on the temporal rule)
+
+(cycles 5)
+
+; --- :dt — temporal offset ---
+; Specify the expected time gap between cause and effect.
+
+(reset)
+(config volume 0)
+
+; Pressing a button opens a door after 5 time steps.
+(believe (predict "press_button" "door_opens") :dt 5)
+
+; The dt=5 is stored with the rule. When the system uses this rule,
+; it expects the effect 5 steps after the cause.
+
+(cycles 3)
+
+; --- Time decay ---
+; Temporal beliefs lose confidence as time passes.
+; This is controlled by the projection decay parameter (default 0.8).
+
+(reset)
+(config volume 0)
+
+; Believe something is true right now.
+(believe "alarm_on" :now)
+
+; Ask about it immediately — full confidence.
+(ask "alarm_on" :now)
+; => Answer with high confidence (close to 0.9)
+
+(cycles 1)
+
+; Wait many cycles...
+(cycles 50)
+
+; Ask again — the answer's displayed truth is the stored value,
+; but internally NARS projects it to the current time, reducing
+; its effective confidence. This affects decision-making: old
+; beliefs contribute less to action selection than fresh ones.
+
+(cycles 3)
+
+; ============================================================
+; Key insight: NARS doesn't just track *what* happens — it tracks
+; *when* things happen and how they relate in time. Temporal
+; predictions let it learn cause-and-effect patterns.
+; ============================================================

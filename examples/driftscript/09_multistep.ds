@@ -1,0 +1,71 @@
+; ============================================================
+; 09_multistep.ds — Multi-step planning
+; ============================================================
+;
+; What you'll learn:
+;   - Chaining multiple operations in sequence
+;   - Goal decomposition: the system breaks a goal into subgoals
+;   - Simulating feedback from the environment
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/09_multistep.ds
+; ============================================================
+
+(config volume 0)
+(config motorbabbling 0)
+
+; Register two operations.
+(def-op ^op1)
+(def-op ^op2)
+
+; ============================================================
+; The plan:  A --[^op1]--> B --[^op2]--> C
+;
+; We want to get from state A to state C, but it requires
+; two steps: first ^op1 (which produces B), then ^op2.
+; ============================================================
+
+; Teach the two links of the chain.
+(believe (predict (seq "A" (call ^op1)) "B"))
+(believe (predict (seq "B" (call ^op2)) "C"))
+
+; --- Step 1: start at A, want C ---
+
+(believe "A" :now)
+(goal "C")
+
+; The system decomposes the goal:
+;   "I want C. I know B→^op2→C. So I need B."
+;   "I know A→^op1→B. A is true. So I should do ^op1."
+;
+; Look for:
+;   ^op1 executed
+
+(cycles 10)
+
+; --- Step 2: simulate ^op1 producing B ---
+; In a real application, the operation callback would report
+; the new state. Here we simulate it manually.
+
+(believe "B" :now)
+
+; Re-assert the goal — now the system can do the second step.
+(goal "C")
+
+; Look for:
+;   ^op2 executed
+;
+; The system sees B is true, knows B→^op2→C, and executes ^op2.
+
+(cycles 10)
+
+; ============================================================
+; In a real application:
+;
+; 1. Register operation callbacks that interact with your system
+; 2. Callbacks report state changes back as beliefs
+; 3. The system continuously re-evaluates goals against new state
+; 4. Multi-step plans emerge from chaining single-step rules
+;
+; See examples/python/example_driftscript.py for a full example
+; with real callbacks that feed state back to the reasoner.
+; ============================================================

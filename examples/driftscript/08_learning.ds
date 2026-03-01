@@ -1,0 +1,74 @@
+; ============================================================
+; 08_learning.ds — Learning from experience
+; ============================================================
+;
+; What you'll learn:
+;   - NARS can learn rules from observation (no explicit rules needed)
+;   - Repeated observations build confidence
+;   - Learned rules drive goal-directed action
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/08_learning.ds
+; ============================================================
+
+(config volume 0)
+(config motorbabbling 0)
+
+; Register the operation.
+(def-op ^grab)
+
+; ============================================================
+; Instead of telling the system a rule, we let it observe
+; a sequence of events and learn the pattern itself.
+; ============================================================
+
+; --- Round 1: observe the sequence ---
+; We see food, then ^grab happens, then we have food.
+
+(believe "see_food" :now)
+(believe ^grab :now)
+(believe "have_food" :now)
+(cycles 5)
+
+; The system notices the temporal pattern:
+;   see_food → ^grab → have_food
+; and begins forming: <(see_food &/ ^grab) =/> have_food>
+; but with low confidence (only one observation).
+
+; --- Round 2: same sequence (reinforcement) ---
+
+(believe "see_food" :now)
+(believe ^grab :now)
+(believe "have_food" :now)
+(cycles 5)
+
+; Two observations of the same pattern = higher confidence.
+; The system revises its learned rule upward.
+
+; --- Now test the learned knowledge ---
+
+; Precondition: we see food right now.
+(believe "see_food" :now)
+
+; Goal: we want to have food.
+(goal "have_food")
+
+; Look for:
+;   decision expectation=0.62...
+;     implication: <(see_food &/ ^grab) =/> have_food>
+;     precondition: see_food
+;   ^grab executed
+;
+; The system never received an explicit rule! It learned
+; <(see_food &/ ^grab) =/> have_food> from the two rounds
+; of observation and used it to achieve the goal.
+
+(cycles 10)
+
+; ============================================================
+; Key insight: NARS acquires procedural knowledge implicitly.
+; By observing sequences of events, it learns temporal rules
+; and later uses them for goal-directed decision making.
+;
+; More observations = higher confidence = more decisive action.
+; This is the foundation of adaptive behavior in NARS.
+; ============================================================
