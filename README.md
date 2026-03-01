@@ -114,24 +114,28 @@ and `docs/narsese_primer.md` for a comprehensive Narsese language reference.
 #### DriftScript
 
 DriftScript is a Lisp-like language that compiles to Narsese, replacing angle brackets
-and cryptic copula symbols with readable S-expressions:
+and cryptic copula symbols with readable S-expressions. All concept names are quoted
+as string literals for unambiguous parsing:
 
 ```python
 # Instead of raw Narsese:
 nar.add_narsese("<(at_home &/ <(*, {SELF}, park) --> ^goto>) =/> at_park>.")
 
 # Write DriftScript:
-nar.add_driftscript("(believe (predict (seq at_home (call ^goto (ext-set SELF) park)) at_park))")
+nar.add_driftscript('(believe (predict (seq "at_home" (call ^goto (ext-set "SELF") "park")) "at_park"))')
 ```
 
 Side-by-side comparison:
 
 | Narsese | DriftScript |
 |---------|-------------|
-| `<bird --> animal>.` | `(believe (inherit bird animal))` |
-| `<robin --> animal>?` | `(ask (inherit robin animal))` |
-| `light_off! :\|:` | `(goal light_off)` |
-| `<($1 --> bird) ==> ($1 --> animal)>.` | `(believe (imply (inherit $x bird) (inherit $x animal)))` |
+| `<bird --> animal>.` | `(believe (inherit "bird" "animal"))` |
+| `<robin --> animal>?` | `(ask (inherit "robin" "animal"))` |
+| `light_off! :\|:` | `(goal "light_off")` |
+| `<($1 --> bird) ==> ($1 --> animal)>.` | `(believe (imply (inherit $x "bird") (inherit $x "animal")))` |
+
+Keywords (`believe`, `inherit`, `seq`), variables (`$x`), and operations (`^press`)
+stay unquoted — only concept names need quotes.
 
 See `docs/driftscript_reference.md` for the full language reference and
 `examples/python/example_driftscript.py` for a complete example.

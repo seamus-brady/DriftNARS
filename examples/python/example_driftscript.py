@@ -75,12 +75,12 @@ with DriftNARS() as nar:
     print()
     print("Teaching: robin is a bird, bird is an animal.")
     nar.add_driftscript("""
-        (believe (inherit bird animal))
-        (believe (inherit robin bird))
+        (believe (inherit "bird" "animal"))
+        (believe (inherit "robin" "bird"))
     """)
 
     print("Asking: is robin an animal?")
-    nar.add_driftscript("(ask (inherit robin animal))")
+    nar.add_driftscript('(ask (inherit "robin" "animal"))')
     print()
 
     # ------------------------------------------------------------------
@@ -94,14 +94,14 @@ with DriftNARS() as nar:
     nar.add_driftscript("(def-op ^press)")
 
     print("Teaching: if light is on and you press, light goes off.")
-    nar.add_driftscript("(believe (predict (seq light_on (call ^press)) light_off))")
+    nar.add_driftscript('(believe (predict (seq "light_on" (call ^press)) "light_off"))')
 
     print("Input:    light is on (now)")
-    nar.add_driftscript("(believe light_on :now)")
+    nar.add_driftscript('(believe "light_on" :now)')
 
     print("Goal:     want light off")
     print()
-    nar.add_driftscript("(goal light_off)")
+    nar.add_driftscript('(goal "light_off")')
 
     nar.add_driftscript("(cycles 5)")
     print()
@@ -118,16 +118,16 @@ with DriftNARS() as nar:
 
     print("Teaching: if at_home and goto(SELF,park), arrive at park.")
     nar.add_driftscript("""
-        (believe (predict (seq at_home
-            (call ^goto (ext-set SELF) park)) at_park))
+        (believe (predict (seq "at_home"
+            (call ^goto (ext-set "SELF") "park")) "at_park"))
     """)
 
     print("Input:    at_home (now)")
-    nar.add_driftscript("(believe at_home :now)")
+    nar.add_driftscript('(believe "at_home" :now)')
 
     print("Goal:     want to be at park")
     print()
-    nar.add_driftscript("(goal at_park)")
+    nar.add_driftscript('(goal "at_park")')
 
     nar.add_driftscript("(cycles 5)")
     print()
@@ -150,18 +150,18 @@ with DriftNARS() as nar:
     # Round 1: observe a sequence of events
     print("Observing: see_food, then ^grab happens, then have_food.")
     nar2.add_driftscript("""
-        (believe see_food :now)
+        (believe "see_food" :now)
         (believe ^grab :now)           ; operation feedback — it happened
-        (believe have_food :now)
+        (believe "have_food" :now)
         (cycles 5)
     """)
 
     # Round 2: same sequence — reinforces the learned rule
     print("Observing again (reinforcement)...")
     nar2.add_driftscript("""
-        (believe see_food :now)
+        (believe "see_food" :now)
         (believe ^grab :now)
-        (believe have_food :now)
+        (believe "have_food" :now)
         (cycles 5)
     """)
 
@@ -169,8 +169,8 @@ with DriftNARS() as nar:
     print()
     print("Now: see_food is true, and we want have_food.")
     nar2.add_driftscript("""
-        (believe see_food :now)
-        (goal have_food)
+        (believe "see_food" :now)
+        (goal "have_food")
         (cycles 10)
     """)
 

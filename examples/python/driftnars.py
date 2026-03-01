@@ -205,6 +205,8 @@ class DriftNARS:
                 self.cycles(int(result.value))
             elif result.kind == "def_op":
                 self.add_operation(result.value)
+            else:
+                raise ValueError(f"Unknown DriftScript result kind: {result.kind!r}")
 
     def on_execution(self, callback):
         """Set execution callback: callback(op_name, args)"""

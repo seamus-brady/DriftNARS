@@ -4,7 +4,7 @@ DriftScript — a Lisp-like language that compiles to Narsese.
     from driftscript import DriftScript
 
     ds = DriftScript()
-    results = ds.compile("(believe (inherit robin bird))")
+    results = ds.compile('(believe (inherit "robin" "bird"))')
     # => [CompileResult(kind='narsese', value='<robin --> bird>.')]
 
 Four-stage pipeline: tokenize -> parse -> compile -> emit.
@@ -36,7 +36,7 @@ class CompileResult:
 
 @dataclass
 class Token:
-    type: str   # "LPAREN" | "RPAREN" | "KEYWORD" | "SYMBOL"
+    type: str   # "LPAREN" | "RPAREN" | "KEYWORD" | "SYMBOL" | "STRING"
     value: str
     line: int
     col: int
@@ -69,10 +69,36 @@ def tokenize(source):
                     j += 1
                 tokens.append(Token("KEYWORD", line_text[i:j], lineno, col))
                 i = j
+            elif ch == '"':
+                # string literal
+                j = i + 1
+                chars = []
+                while j < len(line_text):
+                    c = line_text[j]
+                    if c == '\\':
+                        if j + 1 >= len(line_text):
+                            raise DriftScriptError("Unterminated string escape", lineno, j + 1)
+                        nc = line_text[j + 1]
+                        if nc == '"':
+                            chars.append('"')
+                        elif nc == '\\':
+                            chars.append('\\')
+                        else:
+                            raise DriftScriptError(f"Unknown escape: \\{nc}", lineno, j + 1)
+                        j += 2
+                    elif c == '"':
+                        break
+                    else:
+                        chars.append(c)
+                        j += 1
+                else:
+                    raise DriftScriptError("Unterminated string literal", lineno, col)
+                tokens.append(Token("STRING", "".join(chars), lineno, col))
+                i = j + 1  # skip closing quote
             else:
                 # symbol: atoms, ops, vars, numbers
                 j = i
-                while j < len(line_text) and line_text[j] not in " \t\r\n();":
+                while j < len(line_text) and line_text[j] not in " \t\r\n();\"":
                     j += 1
                 tokens.append(Token("SYMBOL", line_text[i:j], lineno, col))
                 i = j
@@ -88,8 +114,11 @@ class Atom:
     value: str
     line: int
     col: int
+    quoted: bool = False
 
     def __repr__(self):
+        if self.quoted:
+            return f'Atom("{self.value}", quoted=True)'
         return f"Atom({self.value!r})"
 
 
@@ -105,8 +134,10 @@ def parse(tokens):
             raise DriftScriptError("Unexpected ')'", tok.line, tok.col)
         if tok.type == "LPAREN":
             return _parse_list()
-        # SYMBOL or KEYWORD
+        # SYMBOL, KEYWORD, or STRING
         pos[0] += 1
+        if tok.type == "STRING":
+            return Atom(tok.value, tok.line, tok.col, quoted=True)
         return Atom(tok.value, tok.line, tok.col)
 
     def _parse_list():
@@ -265,6 +296,8 @@ class _Compiler:
         head = _head_value(node)
         if head is None:
             raise _error("Empty expression", node)
+        if node[0].quoted:
+            raise _error(f"Top-level keyword must not be quoted: {head}", node[0])
 
         # Pre-scan for reserved variable numbers
         self._scan_reserved_vars(node)
@@ -305,15 +338,31 @@ class _Compiler:
         while i < len(options):
             opt = options[i]
             if isinstance(opt, Atom) and opt.value in (":now", ":past", ":future"):
+                if head == "goal" and opt.value in (":past", ":future"):
+                    raise _error(f"Goals cannot use {opt.value} tense", opt)
                 tense = opt.value
                 i += 1
             elif isinstance(opt, Atom) and opt.value == ":truth":
+                if head == "ask":
+                    raise _error("Questions cannot have :truth values", opt)
                 if i + 2 >= len(options):
                     raise _error(":truth requires F and C values", opt)
                 truth_f = options[i + 1]
                 truth_c = options[i + 2]
                 if not isinstance(truth_f, Atom) or not isinstance(truth_c, Atom):
                     raise _error(":truth F C must be numbers", opt)
+                try:
+                    f_val = float(truth_f.value)
+                except ValueError:
+                    raise _error(f":truth frequency must be a number, got {truth_f.value!r}", truth_f)
+                try:
+                    c_val = float(truth_c.value)
+                except ValueError:
+                    raise _error(f":truth confidence must be a number, got {truth_c.value!r}", truth_c)
+                if not (0.0 <= f_val <= 1.0):
+                    raise _error(f":truth frequency must be in [0.0, 1.0], got {f_val}", truth_f)
+                if not (0.0 <= c_val <= 1.0):
+                    raise _error(f":truth confidence must be in [0.0, 1.0], got {c_val}", truth_c)
                 i += 3
             elif isinstance(opt, Atom) and opt.value == ":dt":
                 if i + 1 >= len(options):
@@ -321,10 +370,13 @@ class _Compiler:
                 dt_val = options[i + 1]
                 if not isinstance(dt_val, Atom):
                     raise _error(":dt value must be a number", opt)
+                try:
+                    int(dt_val.value)
+                except ValueError:
+                    raise _error(f":dt value must be an integer, got {dt_val.value!r}", dt_val)
                 i += 2
             else:
                 raise _error(f"Unknown option: {opt!r}", opt if isinstance(opt, Atom) else node)
-                i += 1
 
         # Compile the term
         term_str = self._compile_term(term_node)
@@ -370,6 +422,8 @@ class _Compiler:
         head = _head_value(node)
         if head is None:
             raise _error("Term list must start with a symbol", node)
+        if node[0].quoted:
+            raise _error(f"Term keyword must not be quoted: {head}", node[0])
 
         args = node[1:]
 
@@ -388,10 +442,18 @@ class _Compiler:
         raise _error(f"Unknown term form: {head!r}", node[0])
 
     def _compile_atom(self, atom):
-        """Compile a bare atom, handling variable renaming."""
+        """Compile a bare atom, handling variable renaming and quoting rules."""
         v = atom.value
         if len(v) >= 2 and v[0] in "$#?":
+            if atom.quoted:
+                raise _error(f"Variables must not be quoted: {v} not \"{v}\"", atom)
             return self._rename_var(v, atom)
+        if v.startswith("^"):
+            if atom.quoted:
+                raise _error(f"Operations must not be quoted: {v} not \"{v}\"", atom)
+            return v
+        if not atom.quoted:
+            raise _error(f"Atom {v!r} must be a string literal: \"{v}\"", atom)
         return v
 
     def _compile_copula(self, head, args, node):
@@ -457,6 +519,8 @@ class _Compiler:
         if not isinstance(op_node, Atom) or not op_node.value.startswith("^"):
             raise _error("'call' first argument must be an operation (^name)", op_node if isinstance(op_node, Atom) else node[0])
 
+        if op_node.quoted:
+            raise _error(f"Operations must not be quoted: {op_node.value}", op_node)
         op_name = op_node.value
         call_args = args[1:]
 
@@ -486,6 +550,8 @@ class _Compiler:
         name_node = node[1]
         if not isinstance(name_node, Atom) or not name_node.value.startswith("^"):
             raise _error("'def-op' argument must be an operation name (^name)", name_node if isinstance(name_node, Atom) else node[0])
+        if name_node.quoted:
+            raise _error(f"Operations must not be quoted: {name_node.value}", name_node)
         return CompileResult("def_op", name_node.value)
 
     def _compile_config(self, node):
