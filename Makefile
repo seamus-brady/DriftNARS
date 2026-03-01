@@ -73,7 +73,7 @@ DEPFILES  := $(OBJS_CORE:.o=.d)
 
 # ── Targets ───────────────────────────────────────────────────────────────────
 .PHONY: all clean test
-all: $(BINDIR)/driftnars $(BINDIR)/libdriftnars.a $(BINDIR)/libdriftnars.$(SHLIB_EXT)
+all: $(BINDIR)/driftnars $(BINDIR)/libdriftnars.a $(BINDIR)/libdriftnars.$(SHLIB_EXT) $(BINDIR)/driftscript
 
 # ── Stage 1: bootstrap binary — only purpose is generating RuleTable.c ────────
 $(BUILDDIR)/bootstrap: $(SRCS_CORE)
@@ -108,6 +108,13 @@ $(BINDIR)/libdriftnars.a: $(OBJS_LIB)
 $(BINDIR)/libdriftnars.$(SHLIB_EXT): $(OBJS_LIB)
 	@mkdir -p $(dir $@)
 	$(CC) $(SHLIB_LFLAGS) $(CFLAGS) $(SSE_FLAGS) $^ $(LDFLAGS) -o $@
+
+# ── DriftScript compiler (standalone, no library dependency) ──────────────────
+$(BINDIR)/driftscript: tools/driftscript.c | $(BINDIR)
+	$(CC) -std=c99 -pedantic -O2 -g -Wall -Wextra -o $@ $<
+
+$(BINDIR):
+	@mkdir -p $@
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 test: $(BINDIR)/driftnars

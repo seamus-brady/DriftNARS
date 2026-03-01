@@ -77,6 +77,7 @@ int Shell_ProcessInput(NAR_t *nar, char *line)
             puts("  *decisionthreshold=F  Set decision threshold");
             puts("  *motorbabbling=F    Set motor babbling chance (0.0-1.0)");
             puts("  *babblingops=N      Set number of babbling operations");
+            puts("  *register ^NAME     Auto-register operation name");
             puts("  *setopname ID NAME  Register operation name");
             puts("  *setoparg ID N TERM Set operation babbling argument");
             puts("  *concurrent         Mark next input as same timestep");
@@ -374,6 +375,13 @@ int Shell_ProcessInput(NAR_t *nar, char *line)
                 sprintf(setval, "*setvalue %f %d %s", fval, granularity, termname);
                 Shell_ProcessInput(nar, setval);
             }
+        }
+        else
+        if(!strncmp("*register ", line, strlen("*register ")))
+        {
+            char opname[ATOMIC_TERM_LEN_MAX+1] = {0};
+            sscanf(&line[strlen("*register ")], "%" STR(ATOMIC_TERM_LEN_MAX) "s", (char*) &opname);
+            NAR_AddOperationName(nar, opname);
         }
         else
         if(!strncmp("*setopname ", line, strlen("*setopname ")))
