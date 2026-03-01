@@ -74,4 +74,7 @@ double Narsese_getAtomValue(NAR_t *nar, Atom atom);
 int Narsese_SequenceLength(NAR_t *nar, Term *sequence);
 int Narsese_CountAtomsUsed(NAR_t *nar);
 
+#define NARSESE_SPRINT_BUFSIZE NARSESE_LEN_MAX
+int Narsese_SprintTerm(NAR_t *nar, Term *term, char *buf, int bufsize);
+
 #endif

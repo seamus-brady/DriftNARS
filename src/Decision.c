@@ -199,6 +199,14 @@ void Decision_Execute(NAR_t *nar, long currentTime, Decision *decision)
             }
             feedbackTerm = operation;
         }
+        if(nar->execution_handler)
+        {
+            char op_buf[NARSESE_SPRINT_BUFSIZE];
+            char args_buf[NARSESE_SPRINT_BUFSIZE];
+            Narsese_SprintTerm(nar, &decision->op[i].term, op_buf, sizeof(op_buf));
+            Narsese_SprintTerm(nar, &decision->arguments[i], args_buf, sizeof(args_buf));
+            nar->execution_handler(nar->execution_handler_userdata, op_buf, args_buf);
+        }
         Narsese_PrintTerm(nar, &decision->op[i].term); fputs(" executed with args ", stdout); Narsese_PrintTerm(nar, &decision->arguments[i]); puts(""); fflush(stdout);
         Feedback feedback = (*decision->op[i].action)(decision->arguments[i]);
         if(feedback.failed) //TODO improve (leaves option for operation to fail, but we don't want each op having to set it to true...)
@@ -540,6 +548,16 @@ static Decision Decision_BestCandidate(NAR_t *nar, Concept *goalconcept, Event *
         return (Decision) {0};
     }
     //set execute and return execution
+    if(nar->decision_handler)
+    {
+        char imp_buf[NARSESE_SPRINT_BUFSIZE];
+        char prec_buf[NARSESE_SPRINT_BUFSIZE];
+        Narsese_SprintTerm(nar, &bestImp.term, imp_buf, sizeof(imp_buf));
+        Narsese_SprintTerm(nar, &decision.reason->term, prec_buf, sizeof(prec_buf));
+        nar->decision_handler(nar->decision_handler_userdata, decision.desire,
+            imp_buf, bestImp.truth.frequency, bestImp.truth.confidence, bestImp.occurrenceTimeOffset,
+            prec_buf, decision.reason->truth.frequency, decision.reason->truth.confidence, decision.reason->occurrenceTime);
+    }
     printf("decision expectation=%f implication: ", decision.desire);
     Narsese_PrintTerm(nar, &bestImp.term); fputs(". ", stdout); Stamp_print(&bestImp.stamp); printf(" Truth: frequency=%f confidence=%f dt=%f", bestImp.truth.frequency, bestImp.truth.confidence, bestImp.occurrenceTimeOffset);
     fputs(" precondition: ", stdout); Narsese_PrintTerm(nar, &decision.reason->term); fputs(". :|: ", stdout); Stamp_print(&decision.reason->stamp); printf(" Truth: frequency=%f confidence=%f", decision.reason->truth.frequency, decision.reason->truth.confidence);

@@ -20,6 +20,7 @@ CFLAGS := \
     -O3 \
     -g3 \
     -flto \
+    -fPIC \
     -pthread \
     -D_POSIX_C_SOURCE=199506L
 
@@ -45,6 +46,15 @@ ifeq ($(shell uname -m),x86_64)
 SSE_FLAGS := -mfpmath=sse -msse2
 endif
 
+# ── Shared library extension / flags ───────────────────────────────────────────
+ifeq ($(shell uname -s),Darwin)
+SHLIB_EXT    := dylib
+SHLIB_LFLAGS := -dynamiclib
+else
+SHLIB_EXT    := so
+SHLIB_LFLAGS := -shared
+endif
+
 BUILDDIR := build
 BINDIR   := bin
 
@@ -63,7 +73,7 @@ DEPFILES  := $(OBJS_CORE:.o=.d)
 
 # ── Targets ───────────────────────────────────────────────────────────────────
 .PHONY: all clean test
-all: $(BINDIR)/driftnars $(BINDIR)/libdriftnars.a
+all: $(BINDIR)/driftnars $(BINDIR)/libdriftnars.a $(BINDIR)/libdriftnars.$(SHLIB_EXT)
 
 # ── Stage 1: bootstrap binary — only purpose is generating RuleTable.c ────────
 $(BUILDDIR)/bootstrap: $(SRCS_CORE)
@@ -93,6 +103,11 @@ $(BINDIR)/driftnars: $(OBJS_ALL)
 $(BINDIR)/libdriftnars.a: $(OBJS_LIB)
 	@mkdir -p $(dir $@)
 	$(AR) $(ARFLAGS) $@ $^
+
+# ── Shared library ────────────────────────────────────────────────────────────
+$(BINDIR)/libdriftnars.$(SHLIB_EXT): $(OBJS_LIB)
+	@mkdir -p $(dir $@)
+	$(CC) $(SHLIB_LFLAGS) $(CFLAGS) $(SSE_FLAGS) $^ $(LDFLAGS) -o $@
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 test: $(BINDIR)/driftnars

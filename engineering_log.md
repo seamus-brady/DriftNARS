@@ -389,3 +389,89 @@ if/else chain so it is checked before the Narsese parser.
 **Verification:** `make clean && make` — zero warnings. `make test` — all tests pass.
 Interactive testing confirmed: prompt display, arrow key editing, history navigation,
 Ctrl-C/Ctrl-D behaviour, `help` output, and piped input fallback.
+
+---
+
+## Phase 7 — Library Output Callbacks, Shared Library, Python Bindings
+
+**Problem:** All DriftNARS output (derivations, answers, decisions, executions) was printed
+directly to stdout via `printf`/`fputs`. Library consumers had no programmatic way to receive
+these events — they could only parse stdout text.
+
+### 7a. `Narsese_SprintTerm` (`src/Narsese.h`, `src/Narsese.c`)
+
+Added a buffer-writing counterpart to `Narsese_PrintTerm`. Three static helpers
+(`sprint_append`, `Narsese_SprintAtom`, `Narsese_SprintTermRecursive`) mirror the existing
+print functions mechanically — every `fputs(str, stdout)` becomes `sprint_append(ctx, str)`.
+
+```c
+#define NARSESE_SPRINT_BUFSIZE NARSESE_LEN_MAX
+int Narsese_SprintTerm(NAR_t *nar, Term *term, char *buf, int bufsize);
+```
+
+Returns the number of characters written, or -1 on truncation.
+
+### 7b. Callback types and NAR_t fields (`src/NAR.h`)
+
+Four callback typedefs with flat C primitives (ctypes-friendly — no struct params):
+
+```c
+typedef void (*NAR_EventHandler)(void *userdata, int reason, const char *narsese,
+    char type, double freq, double conf, double priority, long occTime, double dt);
+typedef void (*NAR_AnswerHandler)(void *userdata, const char *narsese,
+    double freq, double conf, long occTime, long createTime);
+typedef void (*NAR_DecisionHandler)(void *userdata, double expectation,
+    const char *imp, double imp_freq, double imp_conf, double imp_dt,
+    const char *prec, double prec_freq, double prec_conf, long prec_occTime);
+typedef void (*NAR_ExecutionHandler)(void *userdata, const char *op, const char *args);
+```
+
+Reason codes: `NAR_EVENT_INPUT` (1), `NAR_EVENT_DERIVED` (2), `NAR_EVENT_REVISED` (3).
+
+Eight new fields on `NAR_t` (handler + userdata pairs), zero-initialized by `calloc` in
+`NAR_New` — callbacks are inactive by default.
+
+### 7c. Registration functions (`src/NAR.c`)
+
+Four trivial setters (`NAR_SetEventHandler`, `NAR_SetAnswerHandler`,
+`NAR_SetDecisionHandler`, `NAR_SetExecutionHandler`) plus `NAR_AddOperationName` — a
+convenience function that registers an operation with a no-op action, for library consumers
+who handle execution via the execution callback.
+
+### 7d. Callback invocations
+
+Callbacks fire at four sites, **before** the existing printf output, regardless of
+`PRINT_INPUT`/`PRINT_DERIVATIONS` flags:
+
+| Site | File | Callback |
+|------|------|----------|
+| `Memory_printAddedKnowledge` | `src/Memory.c` | `event_handler` |
+| `NAR_PrintAnswer` | `src/NAR.c` | `answer_handler` |
+| `Decision_Suggest` | `src/Decision.c` | `decision_handler` |
+| `Decision_Execute` | `src/Decision.c` | `execution_handler` |
+
+Each site allocates 1–2 stack buffers of `NARSESE_SPRINT_BUFSIZE` (~2KB each).
+
+### 7e. Shared library build (`Makefile`)
+
+- Added `-fPIC` to base `CFLAGS`
+- OS detection: `uname -s` → Darwin = `.dylib` with `-dynamiclib`, else `.so` with `-shared`
+- New target: `$(BINDIR)/libdriftnars.$(SHLIB_EXT)` linking existing `OBJS_LIB`
+- `all:` target now builds binary + static lib + shared lib
+
+### 7f. Python ctypes wrapper (`examples/python/driftnars.py`)
+
+`DriftNARS` class (~170 lines):
+- Loads shared lib, declares argtypes/restype for all public functions
+- Context manager support (`with DriftNARS() as nar:`)
+- `add_narsese(sentence)`, `cycles(n)`, `add_operation(name)`
+- `on_event(cb)`, `on_answer(cb)`, `on_decision(cb)`, `on_execution(cb)`
+- Stores `CFUNCTYPE` references to prevent GC
+
+### 7g. Python example (`examples/python/example.py`)
+
+Demonstrates inheritance reasoning + operation handling with all four callback types.
+
+**Verification:** `make clean && make` — zero warnings, builds binary + `.a` + `.dylib`.
+`make test` — all 27 tests pass. `python3 examples/python/example.py` — all four callback
+types fire correctly.

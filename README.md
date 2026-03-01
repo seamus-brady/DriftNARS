@@ -12,7 +12,7 @@ then refactored into a clean embeddable library core.
 ## Build
 
 ```bash
-make                # builds bin/driftnars + bin/libdriftnars.a
+make                # builds bin/driftnars + .a + .dylib/.so
 make OPENMP=1       # with OpenMP threading
 make test           # run all unit + system tests
 make clean          # remove build artifacts
@@ -57,7 +57,39 @@ NAR_Cycles(nar, 100);
 NAR_Free(nar);
 ```
 
-Link against `libdriftnars.a` with `-lm -lpthread`.
+Link against `libdriftnars.a` (static) or `libdriftnars.dylib`/`.so` (shared)
+with `-lm -lpthread`.
+
+#### Output callbacks
+
+Instead of parsing stdout, library consumers can register structured callbacks:
+
+```c
+void my_answer(void *ud, const char *narsese, double freq, double conf,
+               long occTime, long createTime) {
+    printf("Got answer: %s f=%.2f c=%.2f\n", narsese, freq, conf);
+}
+
+NAR_SetAnswerHandler(nar, my_answer, NULL);
+```
+
+Four callback types are available: `NAR_SetEventHandler`, `NAR_SetAnswerHandler`,
+`NAR_SetDecisionHandler`, `NAR_SetExecutionHandler`. All are optional — callbacks
+that are not set remain silent.
+
+### Python
+
+```python
+from driftnars import DriftNARS
+
+with DriftNARS() as nar:
+    nar.on_answer(lambda n, f, c, occ, ct: print(f"Answer: {n} f={f:.2f} c={c:.2f}"))
+    nar.add_narsese("<bird --> animal>.")
+    nar.add_narsese("<robin --> bird>.")
+    nar.add_narsese("<robin --> animal>?")
+```
+
+See `examples/python/` for a complete example with all four callback types.
 
 ## License
 
