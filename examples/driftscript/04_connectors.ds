@@ -1,0 +1,118 @@
+; ============================================================
+; 04_connectors.ds — Building compound terms
+; ============================================================
+;
+; What you'll learn:
+;   - ext-set / int-set: grouping things
+;   - product: structured tuples
+;   - and / or / not: logical connectives
+;   - seq: sequential conjunction
+;   - Brief intro to intersections, differences, images
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/04_connectors.ds
+; ============================================================
+
+(config volume 0)
+
+; --- ext-set: extensional set {A, B, ...} ---
+; A set of specific individuals. Common for {SELF}.
+
+(believe (inherit (ext-set "SELF") "agent"))
+(ask (inherit (ext-set "SELF") "agent"))
+; => Answer: <{SELF} --> agent>.
+
+(cycles 3)
+
+; --- int-set: intensional set [A, B, ...] ---
+; A set of properties. "X has properties bright and loud."
+
+(reset)
+(config volume 0)
+
+(believe (inherit "firework" (int-set "bright" "loud")))
+(ask (inherit "firework" (int-set "bright" "loud")))
+; => Answer: <firework --> [bright, loud]>.
+
+(cycles 3)
+
+; --- product: structured tuple (*, A, B, C) ---
+; For encoding relations with multiple arguments.
+
+(reset)
+(config volume 0)
+
+; "John likes Mary" as a relation.
+(believe (inherit (product "John" "Mary") "likes"))
+(ask (inherit (product "John" "Mary") "likes"))
+; => Answer: <(*, John, Mary) --> likes>.
+
+(cycles 3)
+
+; --- and: conjunction (A && B) ---
+; Both conditions hold.
+
+(reset)
+(config volume 0)
+
+; If something is a bird AND a flyer, it's an animal.
+(believe (imply (and (inherit $x "bird") (inherit $x "flyer")) (inherit $x "animal")))
+(believe (inherit "eagle" "bird"))
+(believe (inherit "eagle" "flyer"))
+(cycles 5)
+
+(ask (inherit "eagle" "animal"))
+; The system may derive this via conjunction matching.
+
+(cycles 5)
+
+; --- or: disjunction (A || B) ---
+
+(reset)
+(config volume 0)
+
+; Either rain or a sprinkler causes wet grass.
+(believe (imply (or "rain" "sprinkler") "wet_grass"))
+
+(cycles 3)
+
+; --- not: negation (-- A) ---
+
+(reset)
+(config volume 0)
+
+; If it's not raining, the ground is dry.
+(believe (imply (not "rain") "dry_ground"))
+
+(cycles 3)
+
+; --- seq: sequential conjunction (A &/ B) ---
+; Events in temporal order. Max 3 elements.
+
+(reset)
+(config volume 0)
+(config motorbabbling 0)
+(def-op ^press)
+
+; A sequence: light_on, then ^press.
+; Used in temporal rules (predict).
+(believe (predict (seq "light_on" (call ^press)) "light_off"))
+
+; 3-element sequence:
+(believe (predict (seq "a" "b" "c") "d"))
+
+(cycles 3)
+
+; ============================================================
+; Less common connectors (for reference):
+;
+;   (ext-inter "A" "B")   extensional intersection (&, A, B)
+;   (int-inter "A" "B")   intensional intersection (|, A, B)
+;   (ext-diff "A" "B")    extensional difference (-, A, B)
+;   (int-diff "A" "B")    intensional difference (~, A, B)
+;   (ext-image1 "R" "X")  extensional image (/1, R, X)
+;   (ext-image2 "R" "X")  extensional image (/2, R, X)
+;   (int-image1 "R" "X")  intensional image (\1, R, X)
+;   (int-image2 "R" "X")  intensional image (\2, R, X)
+;
+; See docs/driftscript_reference.md for full details.
+; ============================================================

@@ -1,0 +1,93 @@
+; ============================================================
+; 02_truth.ds — Truth values and confidence
+; ============================================================
+;
+; What you'll learn:
+;   - What truth values {frequency, confidence} mean
+;   - How to set explicit truth values
+;   - How confidence reflects evidence strength
+;   - The expectation formula
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/02_truth.ds
+; ============================================================
+
+(config volume 0)
+
+; --- Default truth value ---
+
+; When you don't specify a truth value, DriftNARS uses {1.0 0.9}:
+;   frequency = 1.0   (the statement is fully positive)
+;   confidence = 0.9   (strong but not absolute evidence)
+(believe (inherit "robin" "bird"))
+
+; Ask to see the stored truth value.
+(ask (inherit "robin" "bird"))
+; => frequency=1.000000, confidence=0.900000
+
+(cycles 3)
+
+; --- Explicit truth values ---
+
+(reset)
+(config volume 0)
+
+; Maybe birds can usually fly, but not always.
+; frequency=0.8 means "80% of the time", confidence=0.9 means "good evidence".
+(believe (inherit "bird" "flyer") :truth 0.8 0.9)
+
+(ask (inherit "bird" "flyer"))
+; => frequency=0.800000, confidence=0.900000
+
+(cycles 3)
+
+; --- Low confidence = weak evidence ---
+
+(reset)
+(config volume 0)
+
+; Someone mentioned that penguins might be fish. Low confidence = shaky source.
+(believe (inherit "penguin" "fish") :truth 1.0 0.3)
+
+(ask (inherit "penguin" "fish"))
+; => frequency=1.000000, confidence=0.300000
+;
+; Frequency is 1.0 (the claim says "yes") but confidence is only 0.3
+; (we don't have much evidence for it).
+
+(cycles 3)
+
+; --- Deduced truth values lose confidence ---
+
+(reset)
+(config volume 0)
+
+; Two facts with default truth {1.0, 0.9}:
+(believe (inherit "robin" "bird"))
+(believe (inherit "bird" "animal"))
+(cycles 5)
+
+(ask (inherit "robin" "animal"))
+; => frequency=1.000000, confidence=0.810000
+;
+; The deduced answer has confidence 0.81, not 0.9.
+; Each step of inference reduces confidence slightly — longer chains
+; of reasoning produce weaker conclusions. This is by design:
+; direct evidence is worth more than indirect reasoning.
+
+(cycles 3)
+
+; ============================================================
+; Expectation: a single number combining frequency and confidence.
+;
+;   expectation = confidence * (frequency - 0.5) + 0.5
+;
+; Examples:
+;   {1.0, 0.9} => exp = 0.9 * 0.5 + 0.5 = 0.95  (strong yes)
+;   {0.8, 0.9} => exp = 0.9 * 0.3 + 0.5 = 0.77  (likely yes)
+;   {1.0, 0.3} => exp = 0.3 * 0.5 + 0.5 = 0.65  (weak yes)
+;   {0.0, 0.9} => exp = 0.9 * -0.5 + 0.5 = 0.05 (strong no)
+;
+; Expectation is what DriftNARS uses for decisions: an operation
+; only executes if its expectation exceeds the decision threshold
+; (default 0.501).
+; ============================================================

@@ -1,0 +1,100 @@
+; ============================================================
+; 07_variables.ds — Generalizing knowledge with variables
+; ============================================================
+;
+; What you'll learn:
+;   - $independent variables: universal ("for all")
+;   - ?query variables: "what fills this slot?"
+;   - #dependent variables: existential ("something exists")
+;   - Variable naming and numbering
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/07_variables.ds
+; ============================================================
+
+; --- Independent variables ($): universal rules ---
+; "For all X, if X is a bird, then X is an animal."
+
+(config volume 0)
+
+; $x is an independent variable. DriftScript maps it to $1 in Narsese.
+(believe (imply (inherit $x "bird") (inherit $x "animal")))
+
+; Now give a specific fact.
+(believe (inherit "robin" "bird"))
+(cycles 3)
+
+; The system substitutes $x = robin and deduces:
+(ask (inherit "robin" "animal"))
+; => Answer: <robin --> animal>. confidence=0.81
+
+(cycles 3)
+
+; --- Multiple variables ---
+
+(reset)
+(config volume 0)
+
+; Two different variables: $a maps to $1, $b maps to $2.
+; Same variable name = same entity within one sentence.
+(believe (imply (and (inherit $a "parent") (inherit $b "child"))
+                (inherit $a "caretaker")))
+
+(cycles 3)
+
+; --- Query variables (?): asking "what?" ---
+
+(reset)
+(config volume 0)
+
+; Teach some facts.
+(believe (inherit "robin" "bird"))
+(believe (inherit "penguin" "bird"))
+(believe (inherit "eagle" "bird"))
+
+; Ask: what is a bird?
+(ask (inherit ?x "bird"))
+; => Answer: one of the known birds (e.g., <penguin --> bird>)
+;
+; ?x is a query variable — the system fills in a matching value.
+
+(cycles 3)
+
+; --- Query variable with inheritance chain ---
+
+(reset)
+(config volume 0)
+
+(believe (inherit "robin" "bird"))
+(believe (inherit "bird" "animal"))
+(cycles 5)
+
+; What is an animal?
+(ask (inherit ?what "animal"))
+; => Could answer "bird" or "robin" depending on what was derived.
+
+(cycles 5)
+
+; --- Dependent variables (#): existential ---
+
+(reset)
+(config volume 0)
+
+; "If X is a bird, then X has some property Y."
+; #y is existential — something exists but we don't specify what.
+(believe (imply (inherit $x "bird") (inherit $x #y)))
+
+(cycles 3)
+
+; ============================================================
+; Variable scope:
+;   - Each sentence has its own variable scope
+;   - $x in sentence 1 is independent from $x in sentence 2
+;   - Named variables auto-number: $x→$1, $y→$2, etc.
+;   - Already-numbered variables ($1, $2) pass through as-is
+;   - Named variables avoid collisions with explicit numbers
+;
+; Summary:
+;   $name  independent (universal) — "for all"
+;   #name  dependent (existential) — "there exists"
+;   ?name  query — "what fills this slot?"
+; ============================================================

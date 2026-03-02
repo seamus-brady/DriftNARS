@@ -1,0 +1,100 @@
+; ============================================================
+; 03_copulas.ds — The six relationship types
+; ============================================================
+;
+; What you'll learn:
+;   - inherit: "is a kind of" (the workhorse)
+;   - similar: "resembles" (symmetric)
+;   - imply: "if ... then ..." (eternal rules)
+;   - predict: "if ... then ..." (temporal ordering)
+;   - equiv: "if and only if"
+;   - instance: "is a specific member of"
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/03_copulas.ds
+; ============================================================
+
+; --- inherit: A is a kind of B ---
+; The most common copula. Chains transitively.
+
+(config volume 0)
+
+(believe (inherit "robin" "bird"))
+(believe (inherit "bird" "animal"))
+(cycles 5)
+
+(ask (inherit "robin" "animal"))
+; => Answer: <robin --> animal>. frequency=1.0, confidence=0.81
+
+(cycles 3)
+
+; --- similar: A resembles B ---
+; Symmetric: if cat<->dog then dog<->cat.
+
+(reset)
+(config volume 0)
+
+(believe (similar "cat" "dog"))
+(ask (similar "dog" "cat"))
+; => Answer: <dog <-> cat>. frequency=1.0, confidence=0.81
+
+(cycles 3)
+
+; --- imply: if A then B (eternal) ---
+; General rules that hold timelessly.
+
+(reset)
+(config volume 0)
+
+; All birds are animals (using a variable — see tutorial 07 for details).
+(believe (imply (inherit $x "bird") (inherit $x "animal")))
+(believe (inherit "penguin" "bird"))
+(cycles 3)
+
+(ask (inherit "penguin" "animal"))
+; => Answer: <penguin --> animal>. frequency=1.0, confidence=0.81
+
+(cycles 3)
+
+; --- predict: if A then B (temporal) ---
+; Like imply, but A happens *before* B in time.
+; Used for cause-and-effect and for operation rules (see tutorial 06).
+
+(reset)
+(config volume 0)
+(config motorbabbling 0)
+(def-op ^press)
+
+; If light is on and you press, light goes off.
+(believe (predict (seq "light_on" (call ^press)) "light_off"))
+(believe "light_on" :now)
+(goal "light_off")
+; => ^press executed
+
+(cycles 5)
+
+; --- equiv: A if and only if B ---
+; Bidirectional: knowing one lets you derive the other.
+
+(reset)
+(config volume 0)
+
+(believe (equiv "bachelor" "unmarried_man"))
+(believe "bachelor" :now)
+
+(ask "unmarried_man" :now)
+; => Answer: unmarried_man. frequency=1.0, confidence=0.81
+
+(cycles 5)
+
+; --- instance: A is a specific member of B ---
+; For named individuals. Tweety is a specific bird.
+
+(reset)
+(config volume 0)
+
+(believe (instance "Tweety" "bird"))
+
+(ask (instance "Tweety" "bird"))
+; => Answer: <Tweety |-> bird>. frequency=1.0, confidence=0.9
+
+(cycles 3)

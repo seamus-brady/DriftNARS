@@ -1,0 +1,81 @@
+; ============================================================
+; 06_operations.ds — Goals and actions
+; ============================================================
+;
+; What you'll learn:
+;   - Registering operations with def-op
+;   - Teaching rules that involve operations
+;   - Goal-driven execution: the system decides to act
+;   - Operations with arguments (call with args)
+;
+; Run:  bin/driftnars driftscript < examples/driftscript/06_operations.ds
+; ============================================================
+
+; --- Basic operation: ^press ---
+
+(config volume 0)
+(config motorbabbling 0)
+
+; Register the operation. Names must start with ^.
+(def-op ^press)
+
+; Teach a rule: if light is on and you press, light goes off.
+; predict = temporal "if...then..."
+; seq = "A then B" (sequential conjunction)
+; (call ^press) = the operation being invoked
+(believe (predict (seq "light_on" (call ^press)) "light_off"))
+
+; Tell the system: light is on right now.
+(believe "light_on" :now)
+
+; Tell the system: we want the light off.
+(goal "light_off")
+
+; Look for these lines in the output:
+;   decision expectation=0.79...
+;     implication: <(light_on &/ ^press) =/> light_off>
+;     precondition: light_on
+;   ^press executed with args
+;
+; The system matched the rule, checked the precondition, decided the
+; expectation was above threshold, and executed ^press.
+
+(cycles 5)
+
+; --- Operation with arguments: ^goto ---
+
+(reset)
+(config volume 0)
+(config motorbabbling 0)
+(def-op ^goto)
+
+; Rule: if at_home and goto(SELF, park), arrive at park.
+; (call ^goto (ext-set "SELF") "park") builds: <(*, {SELF}, park) --> ^goto>
+(believe (predict (seq "at_home" (call ^goto (ext-set "SELF") "park")) "at_park"))
+
+; Precondition: we are at home.
+(believe "at_home" :now)
+
+; Goal: we want to be at the park.
+(goal "at_park")
+
+; Look for:
+;   ^goto executed with args ({SELF} * park)
+;
+; The system passes the arguments through to the operation.
+
+(cycles 5)
+
+; ============================================================
+; How decisions work:
+;
+; 1. The system has a goal (e.g., "light_off")
+; 2. It searches for implications that could achieve the goal
+; 3. It checks if the precondition is currently true
+; 4. It computes expectation from the rule's truth value
+; 5. If expectation > decision_threshold (default 0.501), it acts
+;
+; Motor babbling: when motorbabbling > 0 (default 0.2), the
+; system occasionally executes random operations to explore.
+; We set it to 0 here to get deterministic behavior.
+; ============================================================
