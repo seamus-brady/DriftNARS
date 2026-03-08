@@ -123,6 +123,19 @@ Callbacks fire **before** the existing printf output, regardless of `PRINT_INPUT
 
 Python bindings: `examples/python/driftnars.py` wraps the shared library via ctypes.
 
+### HTTP server operation callbacks
+
+The HTTP server (`src/server/httpd.c`) maintains a static op registry (up to 64 entries)
+that maps operation names to outbound callback URLs. When `NAR_SetExecutionHandler`
+fires, the server looks up the operation in the registry and POSTs a JSON payload to
+the registered URL. All registration is done at runtime via REST — nothing is hardcoded.
+
+Key endpoints: `POST /ops/register`, `GET /ops`, `DELETE /ops/:name`, `POST /config`.
+
+The op registry is process-global (not per-NAR-instance) since the server runs a
+single NAR. On `POST /reset`, the execution handler is re-wired to preserve callback
+delivery across engine resets.
+
 ### Narsese syntax quick reference
 
 ```

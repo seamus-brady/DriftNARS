@@ -2,13 +2,18 @@
  * httpd.c — Minimal HTTP server wrapping the DriftNARS engine.
  *
  * Accepts DriftScript (or raw Narsese) via POST and returns the engine
- * output as plain text.
+ * output as plain text.  Supports runtime operation registration with
+ * outbound HTTP callback delivery when operations execute.
  *
  * Endpoints:
- *   POST /driftscript   — compile & execute DriftScript source
- *   POST /narsese       — execute raw Narsese / shell commands (one per line)
- *   POST /reset         — reset the reasoner
- *   GET  /health        — liveness check
+ *   POST   /driftscript    — compile & execute DriftScript source
+ *   POST   /narsese        — execute raw Narsese / shell commands (one per line)
+ *   POST   /reset          — reset the reasoner
+ *   GET    /health         — liveness check
+ *   GET    /ops            — list registered operations and their callbacks
+ *   POST   /ops/register   — register an operation with a callback URL
+ *   DELETE /ops/:name      — unregister an operation
+ *   POST   /config         — set runtime reasoner parameters
  *
  * Build:  make httpd
  * Run:    bin/driftnars-httpd --port 8080
@@ -22,13 +27,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
 #include <ctype.h>
+#include <time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 
 #include "NAR.h"
 #include "Shell.h"
@@ -36,16 +44,156 @@
 
 /* ── Limits ────────────────────────────────────────────────────────────────── */
 
-#define REQ_BUF_SIZE   65536
-#define RESP_BUF_SIZE  (1 << 20)   /* 1 MiB max captured output */
-#define MAX_BODY_SIZE  65536
+#define REQ_BUF_SIZE      65536
+#define RESP_BUF_SIZE     (1 << 20)   /* 1 MiB max captured output */
+#define MAX_BODY_SIZE     65536
+#define OPS_MAX           64
+#define OP_NAME_MAX       64
+#define CALLBACK_URL_MAX  512
+
+/* ── Op registry ───────────────────────────────────────────────────────────── */
+
+typedef struct {
+    char   op[OP_NAME_MAX];
+    char   callback_url[CALLBACK_URL_MAX];
+    double min_confidence;
+    bool   enabled;
+} OpEntry;
+
+static OpEntry op_registry[OPS_MAX];
+static int     op_count = 0;
+
+static int op_find(const char *op)
+{
+    for (int i = 0; i < op_count; i++)
+        if (!strcmp(op_registry[i].op, op)) return i;
+    return -1;
+}
+
+static int op_register(const char *op, const char *callback_url,
+                       double min_confidence)
+{
+    int idx = op_find(op);
+    if (idx < 0) {
+        if (op_count >= OPS_MAX) return -1;
+        idx = op_count++;
+    }
+    snprintf(op_registry[idx].op,           OP_NAME_MAX,      "%s", op);
+    snprintf(op_registry[idx].callback_url, CALLBACK_URL_MAX, "%s", callback_url);
+    op_registry[idx].min_confidence = min_confidence;
+    op_registry[idx].enabled = true;
+    return idx;
+}
+
+static int op_unregister(const char *op)
+{
+    int idx = op_find(op);
+    if (idx < 0) return -1;
+    memmove(&op_registry[idx], &op_registry[idx + 1],
+            (size_t)(op_count - idx - 1) * sizeof(OpEntry));
+    op_count--;
+    return 0;
+}
+
+static void ops_to_json(char *out, size_t out_sz)
+{
+    size_t pos = 0;
+    pos += (size_t)snprintf(out + pos, out_sz - pos, "[");
+    for (int i = 0; i < op_count; i++) {
+        if (i > 0) pos += (size_t)snprintf(out + pos, out_sz - pos, ",");
+        pos += (size_t)snprintf(out + pos, out_sz - pos,
+            "{\"op\":\"%s\",\"callback_url\":\"%s\","
+            "\"min_confidence\":%.4f,\"enabled\":%s}",
+            op_registry[i].op,
+            op_registry[i].callback_url,
+            op_registry[i].min_confidence,
+            op_registry[i].enabled ? "true" : "false");
+    }
+    snprintf(out + pos, out_sz - pos, "]");
+}
+
+/* ── Outbound HTTP POST (callback delivery) ────────────────────────────────── */
+
+static void http_post_callback(const char *url, const char *json_body)
+{
+    if (strncmp(url, "http://", 7) != 0) return;
+    const char *host_start = url + 7;
+    const char *slash = strchr(host_start, '/');
+    const char *path  = slash ? slash : "/";
+
+    size_t hostport_len = slash ? (size_t)(slash - host_start)
+                                : strlen(host_start);
+    char hostport[256];
+    if (hostport_len >= sizeof(hostport)) return;
+    memcpy(hostport, host_start, hostport_len);
+    hostport[hostport_len] = '\0';
+
+    char host[256];
+    char port_str[16] = "80";
+    char *colon = strchr(hostport, ':');
+    if (colon) {
+        size_t hlen = (size_t)(colon - hostport);
+        memcpy(host, hostport, hlen);
+        host[hlen] = '\0';
+        snprintf(port_str, sizeof(port_str), "%s", colon + 1);
+    } else {
+        snprintf(host, sizeof(host), "%s", hostport);
+    }
+
+    struct addrinfo hints = { .ai_socktype = SOCK_STREAM };
+    struct addrinfo *res;
+    if (getaddrinfo(host, port_str, &hints, &res) != 0) return;
+
+    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (fd < 0) { freeaddrinfo(res); return; }
+    if (connect(fd, res->ai_addr, res->ai_addrlen) < 0) {
+        close(fd); freeaddrinfo(res); return;
+    }
+    freeaddrinfo(res);
+
+    size_t body_len = strlen(json_body);
+    char req[4096];
+    int req_len = snprintf(req, sizeof(req),
+        "POST %s HTTP/1.1\r\n"
+        "Host: %s:%s\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %zu\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+        "%s",
+        path, host, port_str, body_len, json_body);
+    if (req_len > 0)
+        write(fd, req, (size_t)req_len);
+
+    char discard[512];
+    while (read(fd, discard, sizeof(discard)) > 0) {}
+    close(fd);
+}
+
+/* ── Execution handler (fires outbound callbacks) ──────────────────────────── */
+
+static void on_execution(void *userdata, const char *op, const char *args)
+{
+    (void)userdata;
+
+    int idx = op_find(op);
+    if (idx < 0 || !op_registry[idx].enabled) return;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    long ts_ms = (long)(ts.tv_sec * 1000L + ts.tv_nsec / 1000000L);
+
+    char payload[1024];
+    snprintf(payload, sizeof(payload),
+        "{\"op\":\"%s\",\"args\":\"%s\","
+        "\"frequency\":1.0,\"confidence\":1.0,"
+        "\"timestamp_ms\":%ld}",
+        op, args ? args : "", ts_ms);
+
+    http_post_callback(op_registry[idx].callback_url, payload);
+}
 
 /* ── Output capture ────────────────────────────────────────────────────────── */
-/*
- * The engine writes to stdout via printf/puts/fputs.  We redirect stdout to
- * an in-memory buffer during request handling so we can return the output in
- * the HTTP response body.
- */
 
 typedef struct {
     char  *buf;
@@ -81,7 +229,6 @@ static void capture_end(Capture *cap)
     dup2(cap->saved_fd, STDOUT_FILENO);
     close(cap->saved_fd);
 
-    /* Drain the pipe into the memstream */
     char tmp[4096];
     ssize_t n;
     while ((n = read(cap->pipe_rd, tmp, sizeof(tmp))) > 0)
@@ -103,7 +250,7 @@ static void send_response(int fd, int status, const char *status_text,
         "Content-Length: %zu\r\n"
         "Connection: close\r\n"
         "Access-Control-Allow-Origin: *\r\n"
-        "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
+        "Access-Control-Allow-Methods: POST, GET, DELETE, OPTIONS\r\n"
         "Access-Control-Allow-Headers: Content-Type\r\n"
         "\r\n",
         status, status_text, content_type, body_len);
@@ -124,6 +271,39 @@ static void send_json(int fd, int status, const char *status_text, const char *b
                   body, strlen(body));
 }
 
+/* ── Minimal JSON field extractors ─────────────────────────────────────────── */
+
+static int extract_json_string(const char *json, const char *key,
+                               char *out, size_t out_sz)
+{
+    char needle[128];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char *p = strstr(json, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    while (*p == ' ' || *p == ':') p++;
+    if (*p != '"') return -1;
+    p++;
+    size_t i = 0;
+    while (*p && *p != '"' && i < out_sz - 1)
+        out[i++] = *p++;
+    out[i] = '\0';
+    return 0;
+}
+
+static int extract_json_double(const char *json, const char *key, double *out)
+{
+    char needle[128];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char *p = strstr(json, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    while (*p == ' ' || *p == ':') p++;
+    if (!(*p == '-' || (*p >= '0' && *p <= '9'))) return -1;
+    *out = strtod(p, NULL);
+    return 0;
+}
+
 /* ── Request parsing (minimal) ─────────────────────────────────────────────── */
 
 typedef struct {
@@ -137,13 +317,11 @@ static int parse_request(const char *raw, size_t raw_len, Request *req)
 {
     memset(req, 0, sizeof(*req));
 
-    /* Request line */
     const char *line_end = strstr(raw, "\r\n");
     if (!line_end) return -1;
 
     sscanf(raw, "%15s %255s", req->method, req->path);
 
-    /* Find Content-Length */
     const char *cl = strcasestr(raw, "Content-Length:");
     if (cl) {
         cl += strlen("Content-Length:");
@@ -151,7 +329,6 @@ static int parse_request(const char *raw, size_t raw_len, Request *req)
         req->content_length = (size_t)atol(cl);
     }
 
-    /* Find body (after \r\n\r\n) */
     const char *body_start = strstr(raw, "\r\n\r\n");
     if (body_start) {
         body_start += 4;
@@ -203,7 +380,6 @@ static int dispatch_driftscript(NAR_t *nar, const char *source)
 
 static void dispatch_narsese(NAR_t *nar, const char *input)
 {
-    /* Work on a copy so we can mutate with strtok */
     size_t len = strlen(input);
     char *copy = malloc(len + 1);
     if (!copy) return;
@@ -212,7 +388,6 @@ static void dispatch_narsese(NAR_t *nar, const char *input)
     char *saveptr;
     char *line = strtok_r(copy, "\n", &saveptr);
     while (line) {
-        /* Trim leading whitespace */
         while (*line && isspace((unsigned char)*line)) line++;
         if (*line) {
             int cmd = Shell_ProcessInput(nar, line);
@@ -243,6 +418,7 @@ static void handle_request(int client_fd, NAR_t *nar, Request *req)
     /* POST /reset */
     if (!strcmp(req->method, "POST") && !strcmp(req->path, "/reset")) {
         Shell_NARInit(nar);
+        NAR_SetExecutionHandler(nar, on_execution, NULL);
         send_json(client_fd, 200, "OK", "{\"status\":\"reset\"}");
         return;
     }
@@ -254,7 +430,6 @@ static void handle_request(int client_fd, NAR_t *nar, Request *req)
             return;
         }
 
-        /* Null-terminate the body */
         char body[MAX_BODY_SIZE + 1];
         size_t blen = req->content_length < MAX_BODY_SIZE ? req->content_length : MAX_BODY_SIZE;
         memcpy(body, req->body, blen);
@@ -301,6 +476,128 @@ static void handle_request(int client_fd, NAR_t *nar, Request *req)
         send_response(client_fd, 200, "OK", "text/plain; charset=utf-8",
                       cap.buf ? cap.buf : "", cap.len);
         free(cap.buf);
+        return;
+    }
+
+    /* GET /ops — list all registered ops */
+    if (!strcmp(req->method, "GET") && !strcmp(req->path, "/ops")) {
+        char body[OPS_MAX * 256];
+        ops_to_json(body, sizeof(body));
+        send_json(client_fd, 200, "OK", body);
+        return;
+    }
+
+    /* POST /ops/register — register an op with a callback URL */
+    if (!strcmp(req->method, "POST") && !strcmp(req->path, "/ops/register")) {
+        if (!req->body || req->content_length == 0) {
+            send_text(client_fd, 400, "Bad Request", "Empty body\n");
+            return;
+        }
+
+        char body[MAX_BODY_SIZE + 1];
+        size_t blen = req->content_length < MAX_BODY_SIZE
+                      ? req->content_length : MAX_BODY_SIZE;
+        memcpy(body, req->body, blen);
+        body[blen] = '\0';
+
+        char op[OP_NAME_MAX]          = {0};
+        char cb_url[CALLBACK_URL_MAX] = {0};
+        double min_conf = 0.0;
+
+        extract_json_string(body, "op",           op,     sizeof(op));
+        extract_json_string(body, "callback_url", cb_url, sizeof(cb_url));
+        extract_json_double(body, "min_confidence", &min_conf);
+
+        if (!op[0] || !cb_url[0]) {
+            send_text(client_fd, 400, "Bad Request",
+                      "op and callback_url are required\n");
+            return;
+        }
+
+        /* Register with DriftNARS engine */
+        char reg_cmd[OP_NAME_MAX + 16];
+        snprintf(reg_cmd, sizeof(reg_cmd), "*register %s", op);
+        Shell_ProcessInput(nar, reg_cmd);
+
+        if (op_register(op, cb_url, min_conf) < 0) {
+            send_text(client_fd, 507, "Insufficient Storage",
+                      "Op registry full\n");
+            return;
+        }
+
+        char resp[512];
+        snprintf(resp, sizeof(resp),
+                 "{\"status\":\"registered\",\"op\":\"%s\"}", op);
+        send_json(client_fd, 200, "OK", resp);
+        return;
+    }
+
+    /* DELETE /ops/:name — unregister an op */
+    if (!strcmp(req->method, "DELETE") &&
+        !strncmp(req->path, "/ops/", 5)) {
+
+        const char *op_name = req->path + 5;
+        if (!op_name[0]) {
+            send_text(client_fd, 400, "Bad Request", "Op name required\n");
+            return;
+        }
+
+        if (op_unregister(op_name) < 0) {
+            send_text(client_fd, 404, "Not Found", "Op not found\n");
+            return;
+        }
+
+        char resp[256];
+        snprintf(resp, sizeof(resp),
+                 "{\"status\":\"unregistered\",\"op\":\"%s\"}", op_name);
+        send_json(client_fd, 200, "OK", resp);
+        return;
+    }
+
+    /* POST /config — set runtime reasoner parameters */
+    if (!strcmp(req->method, "POST") && !strcmp(req->path, "/config")) {
+        if (!req->body || req->content_length == 0) {
+            send_text(client_fd, 400, "Bad Request", "Empty body\n");
+            return;
+        }
+
+        char body[MAX_BODY_SIZE + 1];
+        size_t blen = req->content_length < MAX_BODY_SIZE
+                      ? req->content_length : MAX_BODY_SIZE;
+        memcpy(body, req->body, blen);
+        body[blen] = '\0';
+
+        Capture cap;
+        if (capture_start(&cap) < 0) {
+            send_text(client_fd, 500, "Internal Server Error",
+                      "Capture init failed\n");
+            return;
+        }
+
+        static const struct { const char *json_key; const char *shell_key; } mappings[] = {
+            { "decision_threshold",      "decisionthreshold"      },
+            { "motorbabbling",           "motorbabbling"          },
+            { "volume",                  "volume"                 },
+            { "anticipation_confidence", "anticipationconfidence" },
+            { "question_priming",        "questionpriming"        },
+            { NULL, NULL }
+        };
+
+        for (int i = 0; mappings[i].json_key; i++) {
+            double val;
+            if (extract_json_double(body, mappings[i].json_key, &val) == 0) {
+                char cmd[128];
+                snprintf(cmd, sizeof(cmd), "*%s=%.6g",
+                         mappings[i].shell_key, val);
+                Shell_ProcessInput(nar, cmd);
+            }
+        }
+
+        fflush(stdout);
+        capture_end(&cap);
+        free(cap.buf);
+
+        send_json(client_fd, 200, "OK", "{\"status\":\"configured\"}");
         return;
     }
 
@@ -351,6 +648,7 @@ int main(int argc, char *argv[])
     NAR_t *nar = NAR_New();
     if (!nar) { fputs("Failed to allocate NAR\n", stderr); return 1; }
     Shell_NARInit(nar);
+    NAR_SetExecutionHandler(nar, on_execution, NULL);
 
     /* Create listening socket */
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -379,10 +677,14 @@ int main(int argc, char *argv[])
 
     fprintf(stderr, "DriftNARS HTTP server listening on http://127.0.0.1:%d\n", port);
     fprintf(stderr, "Endpoints:\n");
-    fprintf(stderr, "  POST /driftscript  — execute DriftScript\n");
-    fprintf(stderr, "  POST /narsese      — execute Narsese (one statement per line)\n");
-    fprintf(stderr, "  POST /reset        — reset the reasoner\n");
-    fprintf(stderr, "  GET  /health       — liveness check\n");
+    fprintf(stderr, "  POST   /driftscript    — execute DriftScript\n");
+    fprintf(stderr, "  POST   /narsese        — execute Narsese (one per line)\n");
+    fprintf(stderr, "  POST   /reset          — reset the reasoner\n");
+    fprintf(stderr, "  GET    /health         — liveness check\n");
+    fprintf(stderr, "  GET    /ops            — list registered ops\n");
+    fprintf(stderr, "  POST   /ops/register   — register op with callback URL\n");
+    fprintf(stderr, "  DELETE /ops/:name      — unregister an op\n");
+    fprintf(stderr, "  POST   /config         — set runtime parameters\n");
 
     while (running) {
         struct sockaddr_in client_addr;
@@ -399,18 +701,15 @@ int main(int argc, char *argv[])
         ssize_t total = 0;
         ssize_t n;
 
-        /* Read headers first, then body based on Content-Length */
         while (total < (ssize_t)sizeof(reqbuf) - 1) {
             n = read(client_fd, reqbuf + total, (size_t)(sizeof(reqbuf) - 1 - (size_t)total));
             if (n <= 0) break;
             total += n;
             reqbuf[total] = '\0';
 
-            /* Check if we have full headers */
             char *hdr_end = strstr(reqbuf, "\r\n\r\n");
             if (hdr_end) {
                 size_t hdr_size = (size_t)(hdr_end - reqbuf) + 4;
-                /* Parse content length */
                 const char *cl = strcasestr(reqbuf, "Content-Length:");
                 size_t content_length = 0;
                 if (cl) {
@@ -418,7 +717,6 @@ int main(int argc, char *argv[])
                     while (*cl == ' ') cl++;
                     content_length = (size_t)atol(cl);
                 }
-                /* Check if we have the full body */
                 if ((size_t)total >= hdr_size + content_length)
                     break;
             }

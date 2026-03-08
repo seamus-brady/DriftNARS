@@ -60,6 +60,30 @@ curl -s -X POST "${URL}/narsese" -d '<cat --> animal>.
 <cat --> ?1>?'
 
 echo ""
+echo "=== Register operation with callback ==="
+curl -s -X POST "${URL}/ops/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"op":"^press","callback_url":"http://localhost:4000/exec","min_confidence":0.6}'
+echo
+
+echo ""
+echo "=== List registered operations ==="
+curl -s "${URL}/ops"
+echo
+
+echo ""
+echo "=== Configure runtime parameters ==="
+curl -s -X POST "${URL}/config" \
+    -H 'Content-Type: application/json' \
+    -d '{"decision_threshold":0.65,"motorbabbling":0.0,"volume":0}'
+echo
+
+echo ""
+echo "=== Unregister operation ==="
+curl -s -X DELETE "${URL}/ops/^press"
+echo
+
+echo ""
 echo "=== Reset ==="
 curl -s -X POST "${URL}/reset"
 echo

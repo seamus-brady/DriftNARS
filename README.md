@@ -246,15 +246,22 @@ make httpd
 bin/driftnars-httpd --port 8080
 ```
 
+### Endpoints
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/driftscript` | Compile & execute DriftScript, returns engine output |
 | `POST` | `/narsese` | Execute raw Narsese / shell commands (one per line) |
 | `POST` | `/reset` | Reset the reasoner |
 | `GET` | `/health` | Liveness check — returns `{"status":"ok"}` |
+| `GET` | `/ops` | List registered operations and their callback URLs |
+| `POST` | `/ops/register` | Register an operation with a callback URL |
+| `DELETE` | `/ops/:name` | Unregister an operation |
+| `POST` | `/config` | Set runtime reasoner parameters |
+
+### Reasoning
 
 ```bash
-# Ask a question via DriftScript
 curl -X POST http://127.0.0.1:8080/driftscript -d '
 (believe (inherit "robin" "bird"))
 (believe (inherit "bird" "animal"))
@@ -263,7 +270,62 @@ curl -X POST http://127.0.0.1:8080/driftscript -d '
 '
 ```
 
-See [`examples/httpd/`](examples/httpd/) for a ready-to-run example script.
+### Operation callbacks
+
+Register operations at runtime. When the reasoner decides to execute an operation,
+the server sends an HTTP POST to the registered callback URL with a JSON payload:
+
+```bash
+# Register ^press — when executed, POST to your service
+curl -X POST http://127.0.0.1:8080/ops/register \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "op": "^press",
+      "callback_url": "http://localhost:4000/nars/executions",
+      "min_confidence": 0.6
+    }'
+
+# Teach a rule and trigger the operation
+curl -X POST http://127.0.0.1:8080/driftscript -d '
+(believe (predict (seq "light_on" (call ^press)) "light_off"))
+(believe "light_on" :now)
+(goal "light_off")
+'
+# => ^press fires, your service receives:
+#    {"op":"^press","args":"","frequency":1.0,"confidence":1.0,"timestamp_ms":...}
+```
+
+```bash
+# List registered operations
+curl http://127.0.0.1:8080/ops
+
+# Unregister
+curl -X DELETE http://127.0.0.1:8080/ops/^press
+```
+
+### Runtime configuration
+
+```bash
+curl -X POST http://127.0.0.1:8080/config \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "decision_threshold": 0.65,
+      "motorbabbling": 0.0,
+      "volume": 0
+    }'
+```
+
+Available config keys: `decision_threshold`, `motorbabbling`, `volume`,
+`anticipation_confidence`, `question_priming`.
+
+### Examples and tests
+
+See [`examples/httpd/`](examples/httpd/) for ready-to-run scripts:
+
+```bash
+./examples/httpd/example.sh      # demo all endpoints
+./examples/httpd/test_ops.sh     # test operation callback API (14 tests)
+```
 
 ## Documentation
 
