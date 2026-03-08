@@ -23,9 +23,11 @@ the full change history.
 make                        # builds bin/driftnars + .a + .dylib/.so
 make OPENMP=1               # with OpenMP threading
 make test                   # run all unit + system tests
+make httpd                  # builds bin/driftnars-httpd (HTTP server)
 make clean                  # remove build artifacts
 bin/driftnars shell         # interactive Narsese REPL
 bin/driftnars driftscript   # interactive DriftScript REPL
+bin/driftnars-httpd --port 8080  # HTTP server on port 8080
 ```
 
 Two-stage build: Stage 1 compiles a bootstrap binary, runs it to generate `src/engine/RuleTable.c`,
@@ -174,6 +176,8 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `examples/python/driftnars.py` | Python ctypes wrapper class |
 | `examples/python/example.py` | Python usage example |
 | `examples/driftscript/` | DriftScript tutorial (10 progressive `.ds` files) |
+| `examples/httpd/` | HTTP server example script |
+| `src/server/httpd.c` | Minimal HTTP server wrapping the engine |
 | `docs/narsese_primer.md` | Comprehensive Narsese language reference |
 
 **Pure value functions (no `nar` param):** `Truth_*`, `Stamp_*`, `Term_*`,

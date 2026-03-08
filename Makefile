@@ -73,7 +73,7 @@ OBJS_LIB  := $(filter-out $(BUILDDIR)/main.o, $(OBJS_ALL))
 DEPFILES  := $(OBJS_CORE:.o=.d)
 
 # ── Targets ───────────────────────────────────────────────────────────────────
-.PHONY: all clean test
+.PHONY: all clean test httpd
 all: $(BINDIR)/driftnars $(BINDIR)/libdriftnars.a $(BINDIR)/libdriftnars.$(SHLIB_EXT) $(BINDIR)/driftscript
 
 # ── Stage 1: bootstrap binary — only purpose is generating RuleTable.c ────────
@@ -120,6 +120,20 @@ $(BINDIR)/libdriftnars.$(SHLIB_EXT): $(OBJS_LIB)
 $(BINDIR)/driftscript: src/compiler/driftscript.c
 	@mkdir -p $(dir $@)
 	$(CC) -std=c99 -pedantic -O2 -g -Wall -Wextra -o $@ $<
+
+# ── HTTP server ───────────────────────────────────────────────────────────────
+HTTPD_SRC := src/server/httpd.c
+HTTPD_OBJ := $(BUILDDIR)/httpd.o
+
+$(BUILDDIR)/httpd.o: $(HTTPD_SRC) $(BINDIR)/libdriftnars.a
+	@mkdir -p $(dir $@)
+	$(CC) -std=c99 $(WFLAGS) -O2 -g -D_GNU_SOURCE -DSTAGE=2 -Isrc/engine -Isrc/compiler -c $< -o $@
+
+$(BINDIR)/driftnars-httpd: $(HTTPD_OBJ) $(BINDIR)/libdriftnars.a
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(SSE_FLAGS) $^ $(LDFLAGS) -o $@
+
+httpd: $(BINDIR)/driftnars-httpd
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 test: $(BINDIR)/driftnars

@@ -25,6 +25,7 @@ then refactored into a clean embeddable library core.
 - [Narsese Shell](#narsese-shell)
 - [C Library](#c-library)
 - [Python](#python)
+- [HTTP Server](#http-server)
 - [Documentation](#documentation)
 - [License](#license)
 
@@ -234,6 +235,35 @@ with DriftNARS() as nar:
 
 See [`examples/python/`](examples/python/) for complete examples with all four
 callback types.
+
+## HTTP Server
+
+DriftNARS includes a lightweight HTTP server for integrating the reasoning engine
+with web applications, scripts, or any HTTP client:
+
+```bash
+make httpd
+bin/driftnars-httpd --port 8080
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/driftscript` | Compile & execute DriftScript, returns engine output |
+| `POST` | `/narsese` | Execute raw Narsese / shell commands (one per line) |
+| `POST` | `/reset` | Reset the reasoner |
+| `GET` | `/health` | Liveness check — returns `{"status":"ok"}` |
+
+```bash
+# Ask a question via DriftScript
+curl -X POST http://127.0.0.1:8080/driftscript -d '
+(believe (inherit "robin" "bird"))
+(believe (inherit "bird" "animal"))
+(cycles 5)
+(ask (inherit "robin" "animal"))
+'
+```
+
+See [`examples/httpd/`](examples/httpd/) for a ready-to-run example script.
 
 ## Documentation
 
