@@ -66,7 +66,8 @@ typedef void (*NAR_ExecutionHandler)(void *userdata, const char *op, const char 
 struct NAR_t {
 
     /* ── Memory (Memory.c) ─────────────────────────────── */
-    Concept      concept_storage[CONCEPTS_MAX];
+    Concept     *concept_storage[CONCEPTS_MAX]; //heap-allocated concept pointers
+    int          concepts_allocated; //number of concepts allocated so far
     Item         concept_items_storage[CONCEPTS_MAX];
     PriorityQueue concepts;
     HashTable    HTconcepts;
@@ -207,4 +208,10 @@ void NAR_SetDecisionHandler(NAR_t *nar, NAR_DecisionHandler handler, void *userd
 void NAR_SetExecutionHandler(NAR_t *nar, NAR_ExecutionHandler handler, void *userdata);
 //Register an operation by name with a no-op action (for library consumers using execution callbacks)
 void NAR_AddOperationName(NAR_t *nar, const char *op_name);
+//State serialization — save/load entire NAR state to/from a binary file
+//Returns NAR_OK on success, NAR_ERR_IO on failure
+int NAR_Save(NAR_t *nar, const char *path);
+int NAR_Load(NAR_t *nar, const char *path);
+//Free lowest-priority concepts until count <= target; returns final count
+int NAR_Compact(NAR_t *nar, int target_count);
 #endif

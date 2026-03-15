@@ -190,6 +190,68 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo "=== Test: POST /save ==="
+SAVE_PATH="/tmp/driftnars_test_httpd_$$.dnar"
+RESULT=$(curl -s -X POST "${URL}/save" \
+    -H 'Content-Type: application/json' \
+    -d "{\"path\":\"${SAVE_PATH}\"}")
+check "save response" '"status":"saved"' "$RESULT"
+if [ -f "$SAVE_PATH" ]; then
+    echo "  PASS: save file created"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: save file not created"
+    FAIL=$((FAIL + 1))
+fi
+
+echo "=== Test: POST /save with missing path ==="
+RESULT=$(curl -s -X POST "${URL}/save" \
+    -H 'Content-Type: application/json' \
+    -d '{}')
+check "save missing path rejected" '"path" field is required' "$RESULT"
+
+echo "=== Test: teach, save, reset, load, query ==="
+# Teach something new
+curl -s -X POST "${URL}/driftscript" -d '
+(believe (inherit "eagle" "bird"))
+(believe (inherit "bird" "flyer"))
+(cycles 5)
+' >/dev/null
+
+# Save
+curl -s -X POST "${URL}/save" \
+    -H 'Content-Type: application/json' \
+    -d "{\"path\":\"${SAVE_PATH}\"}" >/dev/null
+
+# Reset
+curl -s -X POST "${URL}/reset" >/dev/null
+
+# Load
+RESULT=$(curl -s -X POST "${URL}/load" \
+    -H 'Content-Type: application/json' \
+    -d "{\"path\":\"${SAVE_PATH}\"}")
+check "load response" '"status":"loaded"' "$RESULT"
+
+# Query — should still know eagle-->flyer after load
+RESULT=$(curl -s -X POST "${URL}/narsese" -d '<eagle --> flyer>?')
+if echo "$RESULT" | grep -qF "Answer:"; then
+    echo "  PASS: knowledge survived save/load"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: knowledge lost after save/load"
+    echo "    got: $RESULT"
+    FAIL=$((FAIL + 1))
+fi
+
+echo "=== Test: POST /load with bad file ==="
+RESULT=$(curl -s -X POST "${URL}/load" \
+    -H 'Content-Type: application/json' \
+    -d '{"path":"/tmp/nonexistent_driftnars_file.dnar"}')
+check "load bad file" "Failed to load state" "$RESULT"
+
+# Clean up save file
+rm -f "$SAVE_PATH"
+
 echo ""
 echo "==============================="
 echo "  Results: $PASS passed, $FAIL failed"

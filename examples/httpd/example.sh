@@ -84,9 +84,24 @@ curl -s -X DELETE "${URL}/ops/^press"
 echo
 
 echo ""
+echo "=== Save state ==="
+curl -s -X POST "${URL}/save" \
+    -H 'Content-Type: application/json' \
+    -d "{\"path\":\"/tmp/driftnars_example.dnar\"}"
+echo
+
+echo ""
 echo "=== Reset ==="
 curl -s -X POST "${URL}/reset"
 echo
+
+echo ""
+echo "=== Load state ==="
+curl -s -X POST "${URL}/load" \
+    -H 'Content-Type: application/json' \
+    -d "{\"path\":\"/tmp/driftnars_example.dnar\"}"
+echo
+rm -f /tmp/driftnars_example.dnar
 
 echo ""
 echo "Done."

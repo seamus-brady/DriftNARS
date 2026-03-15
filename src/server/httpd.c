@@ -14,6 +14,9 @@
  *   POST   /ops/register   — register an operation with a callback URL
  *   DELETE /ops/:name      — unregister an operation
  *   POST   /config         — set runtime reasoner parameters
+ *   POST   /save           — save entire state to binary file
+ *   POST   /load           — load state from binary file
+ *   POST   /compact        — free lowest-priority concepts down to target count
  *
  * Build:  make httpd
  * Run:    bin/driftnars-httpd --port 8080
@@ -146,6 +149,12 @@ static void http_post_callback(const char *url, const char *json_body)
 
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) { freeaddrinfo(res); return; }
+
+    /* 5-second timeout so a hung callback target doesn't block the server */
+    struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     if (connect(fd, res->ai_addr, res->ai_addrlen) < 0) {
         close(fd); freeaddrinfo(res); return;
     }
@@ -172,6 +181,14 @@ static void http_post_callback(const char *url, const char *json_body)
 
 /* ── Execution handler (fires outbound callbacks) ──────────────────────────── */
 
+/*
+ * Note: NAR_ExecutionHandler only provides op name and args — not the truth
+ * values that triggered the decision.  We report frequency=1.0/confidence=1.0
+ * because the decision already passed the engine's decision threshold.  The
+ * min_confidence field in the op registry is checked against the engine's
+ * decision threshold at registration time (it's a contract with the caller),
+ * not at execution time.
+ */
 static void on_execution(void *userdata, const char *op, const char *args)
 {
     (void)userdata;
@@ -419,6 +436,12 @@ static void handle_request(int client_fd, NAR_t *nar, Request *req)
     if (!strcmp(req->method, "POST") && !strcmp(req->path, "/reset")) {
         Shell_NARInit(nar);
         NAR_SetExecutionHandler(nar, on_execution, NULL);
+        /* Re-register all ops from the registry with the fresh engine */
+        for (int i = 0; i < op_count; i++) {
+            char reg_cmd[OP_NAME_MAX + 16];
+            snprintf(reg_cmd, sizeof(reg_cmd), "*register %s", op_registry[i].op);
+            Shell_ProcessInput(nar, reg_cmd);
+        }
         send_json(client_fd, 200, "OK", "{\"status\":\"reset\"}");
         return;
     }
@@ -514,16 +537,19 @@ static void handle_request(int client_fd, NAR_t *nar, Request *req)
             return;
         }
 
+        /* Check registry capacity before committing to the engine */
+        if (op_find(op) < 0 && op_count >= OPS_MAX) {
+            send_text(client_fd, 507, "Insufficient Storage",
+                      "Op registry full\n");
+            return;
+        }
+
         /* Register with DriftNARS engine */
         char reg_cmd[OP_NAME_MAX + 16];
         snprintf(reg_cmd, sizeof(reg_cmd), "*register %s", op);
         Shell_ProcessInput(nar, reg_cmd);
 
-        if (op_register(op, cb_url, min_conf) < 0) {
-            send_text(client_fd, 507, "Insufficient Storage",
-                      "Op registry full\n");
-            return;
-        }
+        op_register(op, cb_url, min_conf);
 
         char resp[512];
         snprintf(resp, sizeof(resp),
@@ -598,6 +624,93 @@ static void handle_request(int client_fd, NAR_t *nar, Request *req)
         free(cap.buf);
 
         send_json(client_fd, 200, "OK", "{\"status\":\"configured\"}");
+        return;
+    }
+
+    /* POST /save — save state to a file (path in JSON body) */
+    if (!strcmp(req->method, "POST") && !strcmp(req->path, "/save")) {
+        if (!req->body || req->content_length == 0) {
+            send_text(client_fd, 400, "Bad Request", "Empty body\n");
+            return;
+        }
+        char body[MAX_BODY_SIZE + 1];
+        size_t blen = req->content_length < MAX_BODY_SIZE
+                      ? req->content_length : MAX_BODY_SIZE;
+        memcpy(body, req->body, blen);
+        body[blen] = '\0';
+
+        char path[1024] = {0};
+        extract_json_string(body, "path", path, sizeof(path));
+        if (!path[0]) {
+            send_text(client_fd, 400, "Bad Request",
+                      "\"path\" field is required\n");
+            return;
+        }
+
+        int rc = NAR_Save(nar, path);
+        if (rc == NAR_OK) {
+            char resp[1280];
+            snprintf(resp, sizeof(resp),
+                     "{\"status\":\"saved\",\"path\":\"%s\"}", path);
+            send_json(client_fd, 200, "OK", resp);
+        } else {
+            send_text(client_fd, 500, "Internal Server Error",
+                      "Failed to save state\n");
+        }
+        return;
+    }
+
+    /* POST /load — load state from a file (path in JSON body) */
+    if (!strcmp(req->method, "POST") && !strcmp(req->path, "/load")) {
+        if (!req->body || req->content_length == 0) {
+            send_text(client_fd, 400, "Bad Request", "Empty body\n");
+            return;
+        }
+        char body[MAX_BODY_SIZE + 1];
+        size_t blen = req->content_length < MAX_BODY_SIZE
+                      ? req->content_length : MAX_BODY_SIZE;
+        memcpy(body, req->body, blen);
+        body[blen] = '\0';
+
+        char path[1024] = {0};
+        extract_json_string(body, "path", path, sizeof(path));
+        if (!path[0]) {
+            send_text(client_fd, 400, "Bad Request",
+                      "\"path\" field is required\n");
+            return;
+        }
+
+        int rc = NAR_Load(nar, path);
+        if (rc == NAR_OK) {
+            /* Re-attach execution handler after load */
+            NAR_SetExecutionHandler(nar, on_execution, NULL);
+            char resp[1280];
+            snprintf(resp, sizeof(resp),
+                     "{\"status\":\"loaded\",\"path\":\"%s\"}", path);
+            send_json(client_fd, 200, "OK", resp);
+        } else {
+            send_text(client_fd, 500, "Internal Server Error",
+                      "Failed to load state\n");
+        }
+        return;
+    }
+
+    /* POST /compact — free lowest-priority concepts to reduce memory */
+    if (!strcmp(req->method, "POST") && !strcmp(req->path, "/compact")) {
+        /* Expect JSON body: {"target": 100} */
+        const char *tgt = strstr(req->body, "\"target\"");
+        int target = 0;
+        if (tgt) {
+            tgt = strchr(tgt, ':');
+            if (tgt) target = atoi(tgt + 1);
+        }
+        if (target < 0) target = 0;
+        int remaining = NAR_Compact(nar, target);
+        char resp[256];
+        snprintf(resp, sizeof(resp),
+                 "{\"status\":\"compacted\",\"concepts\":%d,\"allocated\":%d}\n",
+                 remaining, nar->concepts_allocated);
+        send_json(client_fd, 200, "OK", resp);
         return;
     }
 

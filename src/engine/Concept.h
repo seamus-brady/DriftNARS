@@ -47,6 +47,7 @@
 //Data structure//
 //--------------//
 typedef struct {
+    int storage_index; //index in NAR_t.concept_storage[]
     long id;
     Usage usage;
     Term term;

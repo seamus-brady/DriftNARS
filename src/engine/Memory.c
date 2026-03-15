@@ -49,9 +49,14 @@ static void Memory_ResetConcepts(NAR_t *nar)
     PriorityQueue_INIT(&nar->concepts, nar->concept_items_storage, CONCEPTS_MAX);
     for(int i=0; i<CONCEPTS_MAX; i++)
     {
-        nar->concept_storage[i] = (Concept) {0};
-        nar->concepts.items[i] = (Item) { .address = &(nar->concept_storage[i]) };
+        if(nar->concept_storage[i] != NULL)
+        {
+            free(nar->concept_storage[i]);
+            nar->concept_storage[i] = NULL;
+        }
+        nar->concepts.items[i] = (Item) { .address = NULL };
     }
+    nar->concepts_allocated = 0;
 }
 
 void Memory_INIT(NAR_t *nar)
@@ -84,6 +89,16 @@ Concept* Memory_Conceptualize(NAR_t *nar, Term *term, long currentTime)
     if(ret == NULL)
     {
         Concept *recycleConcept = NULL;
+        //ensure backing storage exists for the next PQ slot (lazy allocation)
+        if(nar->concepts.itemsAmount < CONCEPTS_MAX && nar->concepts.items[nar->concepts.itemsAmount].address == NULL)
+        {
+            Concept *c = (Concept *) calloc(1, sizeof(Concept));
+            if(!c) return NULL;
+            int sidx = nar->concepts_allocated++;
+            c->storage_index = sidx;
+            nar->concept_storage[sidx] = c;
+            nar->concepts.items[nar->concepts.itemsAmount].address = c;
+        }
         //try to add it, and if successful add to voting structure
         PriorityQueue_Push_Feedback feedback = PriorityQueue_Push(&nar->concepts, 1);
         if(feedback.added)
@@ -101,7 +116,9 @@ Concept* Memory_Conceptualize(NAR_t *nar, Term *term, long currentTime)
             //Add term to inverted atom index as well:
             InvertedAtomIndex_AddConcept(nar, *term, recycleConcept);
             //proceed with recycling of the concept in the priority queue
+            int saved_sidx = recycleConcept->storage_index;
             *recycleConcept = (Concept) {0};
+            recycleConcept->storage_index = saved_sidx;
             recycleConcept->term = *term;
             recycleConcept->id = nar->concept_id;
             recycleConcept->usage = (Usage) { .useCount = 1, .lastUsed = currentTime };
@@ -497,7 +514,8 @@ void Memory_AddInputEvent(NAR_t *nar, Event *event, long currentTime)
 
 bool Memory_ImplicationValid(Implication *imp)
 {
-    return imp->sourceConceptId == ((Concept*) imp->sourceConcept)->id;
+    return imp->sourceConcept != NULL &&
+           imp->sourceConceptId == ((Concept*) imp->sourceConcept)->id;
 }
 
 int Memory_getOperationID(NAR_t *nar, Term *term)

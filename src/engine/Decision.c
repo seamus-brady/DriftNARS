@@ -321,6 +321,7 @@ static Decision Decision_ConsiderNegativeOutcomes(NAR_t *nar, long currentTime, 
             for(int j=0; j<c->precondition_beliefs[decision.operationID[0]].itemsAmount; j++)
             {
                 Implication imp = c->precondition_beliefs[decision.operationID[0]].array[j];
+                if(!Memory_ImplicationValid(&imp)) continue;
                 Concept *prec = imp.sourceConcept;
                 if(prec->belief_spike.type != EVENT_TYPE_DELETED && currentTime - prec->belief_spike.occurrenceTime < EVENT_BELIEF_DISTANCE)
                 {

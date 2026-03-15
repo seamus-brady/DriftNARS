@@ -26,6 +26,9 @@ then refactored into a clean embeddable library core.
 - [C Library](#c-library)
 - [Python](#python)
 - [HTTP Server](#http-server)
+- [State Persistence](#state-persistence)
+- [Memory and Resource Management](#memory-and-resource-management)
+- [Error Handling](#error-handling)
 - [Documentation](#documentation)
 - [License](#license)
 
@@ -39,7 +42,7 @@ make clean          # remove build artifacts
 ```
 
 Two-stage build: Stage 1 compiles a bootstrap binary that generates the inference
-rule table (`src/RuleTable.c`), then Stage 2 compiles the final binary into `bin/`.
+rule table (`src/engine/RuleTable.c`), then Stage 2 compiles the final binary into `bin/`.
 
 ## Quick Start
 
@@ -258,6 +261,9 @@ bin/driftnars-httpd --port 8080
 | `POST` | `/ops/register` | Register an operation with a callback URL |
 | `DELETE` | `/ops/:name` | Unregister an operation |
 | `POST` | `/config` | Set runtime reasoner parameters |
+| `POST` | `/save` | Save entire state to binary file |
+| `POST` | `/load` | Load state from binary file |
+| `POST` | `/compact` | Free lowest-priority concepts to reduce memory |
 
 ### Reasoning
 
@@ -318,14 +324,202 @@ curl -X POST http://127.0.0.1:8080/config \
 Available config keys: `decision_threshold`, `motorbabbling`, `volume`,
 `anticipation_confidence`, `question_priming`.
 
+### State persistence
+
+Save and restore the entire reasoner state via the HTTP API — see the
+[State Persistence](#state-persistence) section below for full details including
+CLI usage, the C API, and what gets serialized.
+
 ### Examples and tests
 
 See [`examples/httpd/`](examples/httpd/) for ready-to-run scripts:
 
 ```bash
 ./examples/httpd/example.sh      # demo all endpoints
-./examples/httpd/test_ops.sh     # test operation callback API (14 tests)
+./examples/httpd/test_ops.sh     # test operation callback API + save/load (20 tests)
 ```
+
+## State Persistence
+
+DriftNARS can save its entire state — all learned concepts, beliefs, temporal
+implications, event queues, configuration, and timing — to a binary `.dnar` file,
+and reload it later. This lets you checkpoint a trained system, shut down, and
+resume exactly where you left off.
+
+### What gets saved
+
+Everything the reasoner has learned and every tunable parameter:
+
+- All concepts and their beliefs, goal spikes, predicted beliefs
+- Temporal implication tables (precondition beliefs, implication links)
+- Cycling belief and goal event queues with priorities
+- Atom table (all term names the system has seen)
+- Occurrence time index
+- Operation registrations (names and babbling arguments, but not C function pointers)
+- Runtime parameters (decision threshold, motor babbling, truth decay, etc.)
+- Internal counters (current time, stamp base, RNG seed, concept IDs)
+
+What is **not** saved: C function pointers (operation callbacks, output handlers).
+These belong to the running process and are preserved across a load — you don't
+need to re-register them.
+
+### CLI usage
+
+From either the Narsese shell or DriftScript REPL:
+
+```
+driftnars> <bird --> animal>.
+driftnars> <robin --> bird>.
+driftnars> 5
+driftnars> *save /tmp/brain.dnar
+State saved to /tmp/brain.dnar
+
+driftnars> *reset
+driftnars> *load /tmp/brain.dnar
+State loaded from /tmp/brain.dnar
+
+driftnars> <robin --> animal>?
+Answer: <robin --> animal>. creationTime=2 Truth: frequency=1.000000, confidence=0.810000
+
+driftnars> *compact 50
+Compacted to 50 concepts (50 allocated)
+```
+
+This also works with piped input for scripted workflows:
+
+```bash
+echo '<bird --> animal>.
+<robin --> bird>.
+5
+*save /tmp/brain.dnar' | bin/driftnars shell
+```
+
+### HTTP API
+
+```bash
+# Save current state
+curl -X POST http://127.0.0.1:8080/save \
+    -H 'Content-Type: application/json' \
+    -d '{"path":"/tmp/brain.dnar"}'
+# => {"status":"saved","path":"/tmp/brain.dnar"}
+
+# Load state (replaces current state entirely)
+curl -X POST http://127.0.0.1:8080/load \
+    -H 'Content-Type: application/json' \
+    -d '{"path":"/tmp/brain.dnar"}'
+# => {"status":"loaded","path":"/tmp/brain.dnar"}
+
+# Free lowest-priority concepts to reduce memory
+curl -X POST http://127.0.0.1:8080/compact \
+    -H 'Content-Type: application/json' \
+    -d '{"target":100}'
+# => {"status":"compacted","concepts":100,"allocated":100}
+```
+
+After loading, the system continues reasoning from the restored state. Any
+registered HTTP operation callbacks survive the load automatically.
+
+### C API
+
+```c
+// Save
+int rc = NAR_Save(nar, "/tmp/brain.dnar");  // returns NAR_OK or NAR_ERR_IO
+
+// Load (replaces all state in nar)
+rc = NAR_Load(nar, "/tmp/brain.dnar");      // returns NAR_OK or NAR_ERR_IO
+
+// Free lowest-priority concepts to reduce memory (returns remaining count)
+int remaining = NAR_Compact(nar, 100);
+```
+
+Output callbacks (`NAR_SetAnswerHandler`, etc.) and operation action function
+pointers are preserved across `NAR_Load` — they are not part of the file.
+
+### Compatibility
+
+The binary format includes a header with all compile-time configuration constants
+(`CONCEPTS_MAX`, `ATOMS_MAX`, `STAMP_SIZE`, etc.). A `.dnar` file can only be loaded
+by a binary compiled with the same configuration. Attempting to load a file from an
+incompatible build returns `NAR_ERR_IO`.
+
+## Memory and Resource Management
+
+### Static allocation model
+
+DriftNARS uses lazy, on-demand allocation for concepts. When you call `NAR_New()`,
+it allocates a `NAR_t` struct (~6 MB) containing event queues, hash tables, and index
+structures — but no concepts. Each `Concept` (~294 KB, due to its implication tables
+with `TABLE_SIZE=120` entries) is allocated individually from the heap only when the
+reasoner first needs it.
+
+A fresh instance with 3 inputs uses ~8 MB total. At full capacity (`CONCEPTS_MAX=4096`
+concepts), memory usage reaches ~1.2 GB — the same capacity as ONA, but you only pay
+for what you use.
+
+This design is deliberate:
+
+- **Pay-as-you-go** — memory grows with actual usage, not maximum capacity
+- **Same reasoning characteristics** — identical `TABLE_SIZE` and `CONCEPTS_MAX` as the
+  original, preserving probability distributions and inference quality
+- **Bounded** — the system never exceeds its configured maximum, and when concept
+  capacity is reached, lowest-priority concepts are evicted and their storage recycled
+
+### Resource limits
+
+Key limits are compile-time constants in `src/engine/Config.h`:
+
+| Parameter | Default | What it bounds |
+|-----------|---------|----------------|
+| `CONCEPTS_MAX` | 4096 | Maximum concepts in memory |
+| `ATOMS_MAX` | 255 | Maximum distinct atom names |
+| `OPERATIONS_MAX` | 10 | Maximum registered operations |
+| `CYCLING_BELIEF_EVENTS_MAX` | 20 | Belief event cycling queue size |
+| `CYCLING_GOAL_EVENTS_MAX` | 10 | Goal event cycling queue size |
+| `STAMP_SIZE` | 10 | Evidential base entries per stamp |
+| `TABLE_SIZE` | 120 | Implications per concept slot |
+
+When a pool is full, the system handles it gracefully — it evicts the lowest-priority
+item (for priority queues) or silently drops the new entry (for index structures).
+This is NARS's "Attention and Resource Control" (AIKR) principle: finite resources
+force the system to prioritize, which is a feature, not a limitation.
+
+### Customizing limits
+
+To change limits, edit `src/engine/Config.h` and rebuild. Increasing `CONCEPTS_MAX`
+increases memory proportionally (~300 KB per concept with default `TABLE_SIZE`).
+Reducing `TABLE_SIZE` or `OPERATIONS_MAX` significantly reduces per-concept size.
+Note that `.dnar` save files are tied to the compile-time configuration — you cannot
+load a file saved with different limits.
+
+## Error Handling
+
+All internal data structure operations fail gracefully rather than aborting:
+
+- **Stack overflow/underflow** — `Stack_Push` returns `false` when full,
+  `Stack_Pop` returns `NULL` when empty. Callers check and degrade safely
+  (e.g., the inverted atom index silently skips indexing if the pool is exhausted).
+- **Hash table full** — `HashTable_Set` silently drops the entry when the
+  internal free list is empty. `HashTable_Delete` is a no-op if the item isn't found.
+- **Narsese input too long** — returns `NULL` / empty term instead of aborting.
+  The parser remains usable for subsequent normal-length input.
+- **Atom table full** — returns atom index 0 (invalid) when `ATOMS_MAX` is exceeded.
+- **Memory allocation failure** — `NAR_New()` returns `NULL` if `calloc` fails.
+- **File I/O errors** — `NAR_Save`/`NAR_Load` return `NAR_ERR_IO` on failure.
+
+Error codes returned by the public API:
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| 0 | `NAR_OK` | Success |
+| -1 | `NAR_ERR_PARSE` | Narsese parse or input format error |
+| -2 | `NAR_ERR_MEM` | Memory full — input dropped (non-fatal) |
+| -3 | `NAR_ERR_INIT` | Called before `NAR_INIT` |
+| -4 | `NAR_ERR_IO` | File I/O error (save/load) |
+
+The system is designed to keep running when it hits limits. Concepts get evicted
+by priority, events cycle through bounded queues, and evidence accumulates within
+fixed-size stamps. These aren't error conditions — they're the normal operating
+mode of a resource-bounded reasoning system.
 
 ## Documentation
 

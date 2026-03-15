@@ -72,6 +72,7 @@ void Globals_assert(bool b, char* message);
 #define NAR_ERR_PARSE  -1   /* Narsese parse / input format error */
 #define NAR_ERR_MEM    -2   /* memory full — input dropped (non-fatal) */
 #define NAR_ERR_INIT   -3   /* called before NAR_INIT */
+#define NAR_ERR_IO     -4   /* file I/O error (save/load) */
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 //Number of elements of compile time allocated array:

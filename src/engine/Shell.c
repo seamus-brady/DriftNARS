@@ -83,6 +83,9 @@ int Shell_ProcessInput(NAR_t *nar, char *line)
             puts("  *register ^NAME     Auto-register operation name");
             puts("  *setopname ID NAME  Register operation name");
             puts("  *setoparg ID N TERM Set operation babbling argument");
+            puts("  *save PATH          Save entire state to binary file");
+            puts("  *load PATH          Load state from binary file");
+            puts("  *compact N          Free lowest-priority concepts down to N");
             puts("  *concurrent         Mark next input as same timestep");
             puts("  *query T NARSESE    Query with truth expectation threshold");
             puts("  help                Show this help");
@@ -452,6 +455,39 @@ int Shell_ProcessInput(NAR_t *nar, char *line)
             printf("performing %u inference steps:\n", steps); fflush(stdout);
             NAR_Cycles(nar, steps);
             printf("done with %u additional inference steps.\n", steps); fflush(stdout);
+        }
+        else
+        if(!strncmp("*save ", line, strlen("*save ")))
+        {
+            char path[1024] = {0};
+            sscanf(&line[strlen("*save ")], "%1023s", path);
+            int rc = NAR_Save(nar, path);
+            if(rc == NAR_OK)
+                printf("State saved to %s\n", path);
+            else
+                fprintf(stderr, "//Error: failed to save state to %s\n", path);
+            fflush(stdout);
+        }
+        else
+        if(!strncmp("*load ", line, strlen("*load ")))
+        {
+            char path[1024] = {0};
+            sscanf(&line[strlen("*load ")], "%1023s", path);
+            int rc = NAR_Load(nar, path);
+            if(rc == NAR_OK)
+                printf("State loaded from %s\n", path);
+            else
+                fprintf(stderr, "//Error: failed to load state from %s\n", path);
+            fflush(stdout);
+        }
+        else
+        if(!strncmp("*compact ", line, strlen("*compact ")))
+        {
+            int target = 0;
+            sscanf(&line[strlen("*compact ")], "%d", &target);
+            int remaining = NAR_Compact(nar, target);
+            printf("Compacted to %d concepts (%d allocated)\n", remaining, nar->concepts_allocated);
+            fflush(stdout);
         }
         else
         if(!strncmp("*concurrent", line, strlen("*concurrent")))

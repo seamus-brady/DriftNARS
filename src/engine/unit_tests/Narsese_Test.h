@@ -47,6 +47,17 @@ void Narsese_Test(NAR_t *nar)
     puts("Result:");
     Narsese_PrintTerm(nar, &ret);
     puts("");
+    /* Test oversized input doesn't crash */
+    char oversized[NARSESE_LEN_MAX + 100];
+    memset(oversized, 'a', sizeof(oversized) - 1);
+    oversized[sizeof(oversized) - 1] = '\0';
+    char *expanded = Narsese_Expand(nar, oversized);
+    assert(expanded == NULL, "Oversized Narsese input should return NULL");
+
+    /* Verify normal parsing still works after overflow attempt */
+    Term t_after = Narsese_Term(nar, "<cat --> animal>");
+    assert(t_after.atoms[0] != 0, "Parsing should still work after overflow attempt");
+
     puts(">>Narsese Test successful");
     Narsese_PrintTerm(nar, &ret);
     puts("");

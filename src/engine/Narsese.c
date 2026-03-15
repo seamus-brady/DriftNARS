@@ -32,7 +32,7 @@ static char* replaceWithCanonicalCopulas(NAR_t *nar, char *narsese, int n)
     char *narsese_replaced = nar->parse_buf_replaced;
     memset(narsese_replaced, ' ', NARSESE_REPLACE_LEN);
     //upper bound of 3 increment given by max. look-ahead of --> becoming :, plus 0 at the end
-    assert(n+3 <= NARSESE_LEN_MAX, "NARSESE_LEN_MAX too small, consider increasing or split input into multiple statements! \n");
+    if(n+3 > NARSESE_LEN_MAX) return NULL; //input too long
     int j=0;
     for(int i=0; i<n; )
     {
@@ -185,6 +185,7 @@ char* Narsese_Expand(NAR_t *nar, char *narsese)
     char *narsese_expanded = nar->parse_buf_expanded;
     memset(narsese_expanded, ' ', NARSESE_EXPAND_LEN);
     char *narsese_replaced = replaceWithCanonicalCopulas(nar, narsese, strlen(narsese));
+    if(narsese_replaced == NULL) return NULL; //input too long
     int k = 0, n = strlen(narsese_replaced);
     for(int i=0; i<n; i++)
     {
@@ -294,7 +295,7 @@ int Narsese_AtomicTermIndex(NAR_t *nar, char *name)
     }
     if(ret_index == -1)
     {
-        assert(nar->term_index < ATOMS_MAX, "Too many terms for NAR");
+        if(nar->term_index >= ATOMS_MAX) return 0; //atom table full
         ret_index = nar->term_index+1;
         strncpy(nar->atom_names[nar->term_index], name, ATOMIC_TERM_LEN_MAX-1);
         HashTable_Set(&nar->HTatoms, (void*) nar->atom_names[nar->term_index], (void*) ret_index);
@@ -332,7 +333,7 @@ static void buildBinaryTree(NAR_t *nar, Term *bintree, char** tokens_prefix, int
     }
     else
     {
-        assert(tree_index-1 < COMPOUND_TERM_SIZE_MAX, "COMPOUND_TERM_SIZE_MAX too small, consider increasing or split input into multiple statements!");
+        if(tree_index-1 >= COMPOUND_TERM_SIZE_MAX) return; //term too deep
         if(!(tokens_prefix[i1][0] == ')' && tokens_prefix[i1][1] == 0))
         {
             bintree->atoms[tree_index-1] = Narsese_AtomicTermIndex(nar, tokens_prefix[i1]);
@@ -350,6 +351,7 @@ Term Narsese_Term(NAR_t *nar, char *narsese)
     //parse Narsese by expanding it, bringing into prefix form, then building a binary tree, and normalizing variables
     Term ret = {0};
     char *narsese_expanded = Narsese_Expand(nar, narsese);
+    if(narsese_expanded == NULL) return ret; //input too long, return empty term
     char** tokens_prefix = Narsese_PrefixTransform(nar, narsese_expanded);
     int nt = 0; for(;tokens_prefix[nt] != NULL; nt++){}
     buildBinaryTree(nar, &ret, tokens_prefix, 0, 1, nt);

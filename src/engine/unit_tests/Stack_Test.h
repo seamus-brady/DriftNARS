@@ -49,5 +49,25 @@ void Stack_Test(NAR_t *nar)
     VMItem *item1_popped_again = Stack_Pop(&stack);
     assert(item1_popped_again->value == &c1, "Popped item1 should point to c1 (2)");
     assert(Stack_IsEmpty(&stack), "Stack should be empty");
+
+    /* Test underflow: popping from empty stack returns NULL */
+    void *underflow_result = Stack_Pop(&stack);
+    assert(underflow_result == NULL, "Pop from empty stack should return NULL");
+    assert(stack.stackpointer == 0, "Stackpointer should stay at 0 after underflow");
+
+    /* Test overflow: pushing beyond capacity returns false */
+    VMItem items[STACK_TEST_STRUCTURE_SIZE];
+    for(int i = 0; i < STACK_TEST_STRUCTURE_SIZE; i++)
+    {
+        items[i] = (VMItem) {0};
+        bool pushed = Stack_Push(&stack, &items[i]);
+        assert(pushed, "Push within capacity should succeed");
+    }
+    assert(stack.stackpointer == STACK_TEST_STRUCTURE_SIZE, "Stack should be full");
+    VMItem overflow_item = {0};
+    bool overflow_result = Stack_Push(&stack, &overflow_item);
+    assert(!overflow_result, "Push beyond capacity should return false");
+    assert(stack.stackpointer == STACK_TEST_STRUCTURE_SIZE, "Stackpointer should not change on overflow");
+
     puts(">>Stack test successful");
 }

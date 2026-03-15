@@ -31,17 +31,24 @@ void Stack_INIT(Stack *stack, void **items, int maxElements)
     stack->maxElements = maxElements;
 }
 
-void Stack_Push(Stack *stack, void *item)
+bool Stack_Push(Stack *stack, void *item)
 {
+    if(stack->stackpointer >= stack->maxElements)
+    {
+        return false;
+    }
     stack->items[stack->stackpointer] = item;
     stack->stackpointer++;
-    assert(stack->stackpointer <= stack->maxElements, "VMEntry stack overflow");
+    return true;
 }
 
 void *Stack_Pop(Stack *stack)
 {
+    if(stack->stackpointer <= 0)
+    {
+        return NULL;
+    }
     stack->stackpointer--;
-    assert(stack->stackpointer >= 0, "VMEntry stack underflow");
     return stack->items[stack->stackpointer];
 }
 

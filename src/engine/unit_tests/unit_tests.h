@@ -32,6 +32,7 @@
 #include "Stack_Test.h"
 #include "Table_Test.h"
 #include "HashTable_Test.h"
+#include "Serialization_Test.h"
 
 void Run_Unit_Tests(NAR_t *nar)
 {
@@ -45,4 +46,5 @@ void Run_Unit_Tests(NAR_t *nar)
     RuleTable_Test(nar);
     Stack_Test(nar);
     HashTable_Test(nar);
+    Serialization_Test(nar);
 }

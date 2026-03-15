@@ -51,6 +51,7 @@ void InvertedAtomIndex_AddConcept(NAR_t *nar, Term term, Concept *c)
             if(elem == NULL)
             {
                 ConceptChainElement *newElem = Stack_Pop(&nar->cce_stack); //new item
+                if(newElem == NULL) goto NEXT_ATOM; //pool exhausted
                 newElem->c = c;
                 nar->inverted_atom_index[atom] = newElem;
             }
@@ -69,6 +70,7 @@ void InvertedAtomIndex_AddConcept(NAR_t *nar, Term term, Concept *c)
                 }
                 //ok, we can add it as previous->next
                 ConceptChainElement *newElem = Stack_Pop(&nar->cce_stack); //new item
+                if(newElem == NULL) goto NEXT_ATOM; //pool exhausted
                 newElem->c = c;
                 previous->next = newElem;
             }

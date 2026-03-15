@@ -61,6 +61,7 @@ void HashTable_Set(HashTable *hashtable, void *key, void *value)
     }
     //Retrieve recycled VMItem from the stack and set its value to c
     VMItem *popped = Stack_Pop(&hashtable->VMStack);
+    if(popped == NULL) return; //table full
     popped->value = value;
     popped->key = key;
     popped->next = NULL;
@@ -108,7 +109,7 @@ void HashTable_Delete(HashTable *hashtable, void *key)
             return;
         }
     }
-    assert(false, "HashTable deletion failed, item was not found!");
+    //Item not found — nothing to delete
 }
 
 void HashTable_INIT(HashTable *hashtable, VMItem* storage, VMItem** storageptrs, VMItem** HT, int buckets, int maxElements, Equal equal, Hash hash)

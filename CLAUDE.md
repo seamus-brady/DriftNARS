@@ -61,12 +61,19 @@ void   NAR_SetAnswerHandler(NAR_t *nar, NAR_AnswerHandler handler, void *userdat
 void   NAR_SetDecisionHandler(NAR_t *nar, NAR_DecisionHandler handler, void *userdata);
 void   NAR_SetExecutionHandler(NAR_t *nar, NAR_ExecutionHandler handler, void *userdata);
 
+// State serialization
+int    NAR_Save(NAR_t *nar, const char *path);   // returns NAR_OK or NAR_ERR_IO
+int    NAR_Load(NAR_t *nar, const char *path);   // returns NAR_OK or NAR_ERR_IO
+
+// Memory management
+int    NAR_Compact(NAR_t *nar, int target_count); // free lowest-priority concepts
+
 // Term to string
 int    Narsese_SprintTerm(NAR_t *nar, Term *term, char *buf, int bufsize);
 
 // Reason codes: NAR_EVENT_INPUT=1, NAR_EVENT_DERIVED=2, NAR_EVENT_REVISED=3
 // Error codes (defined in src/Globals.h)
-// NAR_OK = 0, NAR_ERR_PARSE = -1, NAR_ERR_MEM = -2, NAR_ERR_INIT = -3
+// NAR_OK = 0, NAR_ERR_PARSE = -1, NAR_ERR_MEM = -2, NAR_ERR_INIT = -3, NAR_ERR_IO = -4
 ```
 
 Minimal usage:
@@ -88,6 +95,15 @@ NAR_Free(nar);
 All mutable state lives in `NAR_t` (defined in `src/NAR.h`). There are no meaningful
 file-scope globals except two in `Truth.c` (see below). Every function that touches
 instance state takes `NAR_t *nar` as its first parameter.
+
+### Dynamic concept allocation
+
+`NAR_t` itself is ~6 MB (event queues, hash tables, index structures). Concepts are
+heap-allocated individually (~294 KB each) on demand in `Memory_Conceptualize`. The
+`concept_storage[CONCEPTS_MAX]` array in `NAR_t` holds pointers (not inline structs).
+Each `Concept` has a `storage_index` field tracking its position in this array.
+When a concept is evicted by the priority queue, its storage is recycled (zeroed and
+reused), preserving `storage_index`. `NAR_Free` frees all allocated concepts.
 
 ### Truth.c global sync (known limitation)
 
@@ -136,6 +152,21 @@ The op registry is process-global (not per-NAR-instance) since the server runs a
 single NAR. On `POST /reset`, the execution handler is re-wired to preserve callback
 delivery across engine resets.
 
+### State serialization
+
+`NAR_Save`/`NAR_Load` persist the entire NAR state to a binary file (`.dnar`).
+Format version 2 stores: header with compile-time config params for validation, all
+scalars, atom tables, per-slot allocated/unallocated flags with concept data (only
+allocated concepts are written), event queues, occurrence time index, and operation
+terms/arguments (no function pointers). Save files scale with actual usage — a
+lightly-used instance produces a small file. On load, concepts are heap-allocated
+and all pointer-based indices (hash tables, inverted atom index, priority queues,
+`Implication.sourceConcept`) are reconstructed. Callbacks and operation action
+pointers are preserved across load (they come from the running process, not the file).
+
+CLI: `*save PATH` / `*load PATH`. HTTP: `POST /save` / `POST /load` with
+`{"path":"..."}` JSON body.
+
 ### Narsese syntax quick reference
 
 ```
@@ -182,7 +213,7 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `src/engine/Globals.h/.c` | Error codes, assert macro, hash, RNG |
 | `src/engine/Config.h` | All compile-time parameters (226+ constants) |
 | `src/engine/main.c` | Entry point: test runner, shell, rule-table generation |
-| `src/engine/unit_tests/` | 10 unit tests |
+| `src/engine/unit_tests/` | 11 unit tests (including serialization) |
 | `src/engine/system_tests/` | 13 system tests |
 | `src/compiler/driftscript.c` | DriftScript-to-Narsese compiler |
 | `src/compiler/driftscript.h` | Public API for DriftScript compiler (library mode) |
@@ -207,7 +238,7 @@ Copulas: `:` inheritance, `=` similarity, `$` temporal implication, `?` implicat
 | `OPERATIONS_MAX` | 10 | Max registered operations |
 | `STAMP_SIZE` | 10 | Max evidential base size (silent truncation beyond this) |
 | `MAX_SEQUENCE_LEN` | 3 | Max length of `&/` sequences |
-| `TABLE_SIZE` | 20 | Max implications per concept slot |
+| `TABLE_SIZE` | 120 | Max implications per concept slot |
 | `DECISION_THRESHOLD_INITIAL` | 0.501 | Min expectation to execute an operation |
 | `MOTOR_BABBLING_CHANCE_INITIAL` | 0.2 | Random exploration rate |
 | `TRUTH_EVIDENTIAL_HORIZON_INITIAL` | 1.0 | Prior evidence weight |
@@ -243,3 +274,11 @@ Runtime-tunable fields live directly on `NAR_t` (e.g. `nar->DECISION_THRESHOLD`,
   its call chain and adding the fields to `NAR_t` in `src/NAR.h`.
 - **Truth.c global sync**: if adding a second NAR instance with different tuning, call
   `NAR_INIT` on the active instance before using its truth functions.
+- **NAR_Save/NAR_Load binary format** (version 2) is tied to compile-time config
+  (CONCEPTS_MAX, etc.). A file saved with one config cannot be loaded by a binary
+  compiled with different params. Operation function pointers are NOT serialized —
+  re-register ops after load. Version 1 files are incompatible.
+- **Stack_Push returns bool** — returns false on overflow (check in InvertedAtomIndex,
+  HashTable). **Stack_Pop returns NULL** on underflow. These are no longer asserts.
+- **Concept.storage_index** — must be preserved when recycling a concept. The zero-init
+  pattern `*concept = (Concept){0}` will clear it; save and restore it across resets.

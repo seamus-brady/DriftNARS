@@ -79,7 +79,11 @@ void Process_Args(NAR_t *nar, int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     NAR_t *nar = NAR_New();
-    assert(nar != NULL, "Failed to allocate NAR instance");
+    if(nar == NULL)
+    {
+        fputs("Failed to allocate NAR instance\n", stderr);
+        return 1;
+    }
 #ifdef SEED
     mysrand(nar, SEED);
 #else
